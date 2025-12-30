@@ -1,4 +1,6 @@
 import os
+from pathlib import Path
+import pandas as pd
 
 # -------------------------------------------------
 # App Settings
@@ -6,20 +8,19 @@ import os
 APP_TITLE = "Follow-up & Reminder Agent"
 
 # -------------------------------------------------
-# Base Directory
+# Base Directory (works locally + on Streamlit Cloud)
 # -------------------------------------------------
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+BASE_DIR = Path(__file__).resolve().parent
 
 # -------------------------------------------------
 # Data / Excel Configuration
 # -------------------------------------------------
-DATA_DIR = os.path.join(BASE_DIR, "data")
-EXCEL_FILE_PATH = "/Users/praveenchaudhary/Downloads/Agent/CEO_Followup_Agent/data/auto_reply_sent.xlsx"
+DATA_DIR = BASE_DIR / "data"
+EXCEL_FILE_PATH = DATA_DIR / "auto_reply_sent.xlsx"
 
 # -------------------------------------------------
 # Email Configuration (STANDARDIZED)
 # -------------------------------------------------
-# As instructed: use ONLY this email everywhere
 DEFAULT_EMAIL = "praveen.chaudhary@koenig-solutions.com"
 
 EMAIL_SENDER = DEFAULT_EMAIL
@@ -28,32 +29,27 @@ EMAIL_RECEIVER = DEFAULT_EMAIL
 SMTP_SERVER = "smtp.office365.com"
 SMTP_PORT = 587
 
-SMTP_USERNAME = "praveen.chaudhary@koenig-solutions.com"
-SMTP_PASSWORD = "SalaryRecoAgent"   # app password
+SMTP_USERNAME = DEFAULT_EMAIL
+
+# ❗ Password must come from environment / Streamlit secrets
+EMAIL_PASSWORD_ENV_KEY = "CEO_AGENT_EMAIL_PASSWORD"
 
 SENDER_NAME = "Praveen Chaudhary"
 
-# IMPORTANT:
-# Do NOT hardcode password here.
-# Set it as an environment variable:
-# export CEO_AGENT_EMAIL_PASSWORD="your_app_password"
-EMAIL_PASSWORD_ENV_KEY = "CEO_AGENT_EMAIL_PASSWORD"
-
 # -------------------------------------------------
-# Validation
+# Validation (Cloud-safe)
 # -------------------------------------------------
 def validate_paths():
     """
     Ensure required folders and files exist.
-    Create them if missing (safe for production).
+    Safe for:
+    - Local runs
+    - Fresh clone
+    - Streamlit Cloud
     """
-    if not os.path.exists(DATA_DIR):
-        os.makedirs(DATA_DIR)
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
 
-    if not os.path.exists(EXCEL_FILE_PATH):
-        # Create empty Excel file structure if missing
-        import pandas as pd
-
+    if not EXCEL_FILE_PATH.exists():
         df = pd.DataFrame(
             columns=[
                 "Subject",
