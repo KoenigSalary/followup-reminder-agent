@@ -3,3 +3,5 @@ pandas
 openpyxl
 python-dateutil
 python-dotenv
+requests
+
