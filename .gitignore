@@ -1,0 +1,22 @@
+# Secrets & credentials
+.env
+
+# Python cache / compiled
+__pycache__/
+*.pyc
+*.pyo
+*.bin
+
+# Data files (live business data)
+data/*.xlsx
+data/*.csv
+
+# Virtual environment
+venv/
+
+# OS files
+.DS_Store
+
+# Logs
+*.log
+
