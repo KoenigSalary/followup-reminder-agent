@@ -3,6 +3,7 @@ import smtplib
 from datetime import datetime
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
+from dotenv import load_dotenv
 
 from config import (
     EMAIL_SENDER,
@@ -11,6 +12,12 @@ from config import (
     EMAIL_PASSWORD_ENV_KEY
 )
 
+load_dotenv()  # harmless locally, ignored in cloud
+
+SMTP_PASSWORD = os.getenv("CEO_AGENT_EMAIL_PASSWORD")
+
+if not SMTP_PASSWORD:
+    raise EnvironmentError("Environment variable 'CEO_AGENT_EMAIL_PASSWORD' not set")
 
 class EmailProcessor:
     def __init__(self):
