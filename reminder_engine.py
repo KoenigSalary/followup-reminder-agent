@@ -6,7 +6,14 @@ import os
 BASE_DIR = Path(__file__).resolve().parent
 ENV_PATH = BASE_DIR / ".env"
 
+# Load env (local .env OR Streamlit Secrets)
 load_dotenv(dotenv_path=ENV_PATH)
+
+SMTP_PASSWORD = os.getenv("CEO_AGENT_EMAIL_PASSWORD")
+if not SMTP_PASSWORD:
+    raise EnvironmentError(
+        "Environment variable 'CEO_AGENT_EMAIL_PASSWORD' not set"
+    )
 # ==============================================
 
 # ================= IMPORTS =====================
