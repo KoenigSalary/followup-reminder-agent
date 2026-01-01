@@ -38,7 +38,81 @@ from reminder_scheduler import ReminderScheduler, get_next_reminder_date
 from manual_processor import ManualTaskProcessor
 
 # =========================================================
-# PAGE CONFIG (must be first Streamlit call)
+# 🔐 AUTHENTICATION SYSTEM
+# =========================================================
+from user_manager import UserManager
+
+# Initialize user manager
+@st.cache_resource
+def get_user_manager():
+    return UserManager()
+
+user_manager = get_user_manager()
+
+# Initialize session state for authentication
+if 'authenticated' not in st.session_state:
+    st.session_state.authenticated = False
+    st.session_state.user_info = None
+    st.session_state.permissions = None
+
+# Login function
+def login():
+    """Display login page"""
+    st.set_page_config(page_title="Login - Task Follow-up System", layout="centered")
+    
+    # Center logo
+    col1, col2, col3 = st.columns([1, 2, 1])
+    with col2:
+        if LOGO_PATH.exists():
+            st.image(str(LOGO_PATH), width=300)
+        st.markdown("##")  # Spacing
+    
+    st.title("🔐 Task Follow-up System")
+    st.caption("Koenig Solutions")
+    
+    col1, col2, col3 = st.columns([1, 2, 1])
+    
+    with col2:
+        st.markdown("### Please login to continue")
+        
+        with st.form("login_form"):
+            username = st.text_input("Username", placeholder="Enter your username")
+            password = st.text_input("Password", type="password", placeholder="Enter your password")
+            
+            submitted = st.form_submit_button("🔓 Login", use_container_width=True)
+            
+            if submitted:
+                if username and password:
+                    user_info = user_manager.authenticate(username, password)
+                    
+                    if user_info:
+                        st.session_state.authenticated = True
+                        st.session_state.user_info = user_info
+                        st.session_state.permissions = user_manager.get_user_permissions(user_info)
+                        st.success(f"✅ Welcome, {user_info['full_name']}!")
+                        st.rerun()
+                    else:
+                        st.error("❌ Invalid username or password")
+                else:
+                    st.warning("⚠️ Please enter both username and password")
+        
+        st.markdown("---")
+        st.caption("🔒 Contact IT for account access")
+
+def logout():
+    """Logout user"""
+    st.session_state.authenticated = False
+    st.session_state.user_info = None
+    st.session_state.permissions = None
+    st.rerun()
+
+# Check authentication status
+if not st.session_state.authenticated:
+    login()
+    st.stop()
+
+# =========================================================
+# PAGE CONFIG (after authentication)
 # =========================================================
 st.set_page_config(
     page_title=APP_TITLE,
@@ -46,15 +120,26 @@ st.set_page_config(
 )
 
 # =========================================================
-# SIDEBAR BRANDING
+# SIDEBAR BRANDING + USER INFO
 # =========================================================
 with st.sidebar:
     if LOGO_PATH.exists():
         st.image(str(LOGO_PATH), width=220)
     st.markdown("### Follow-up & Reminder Agent")
     st.markdown("---")
+    
+    # User info section
+    st.markdown(f"**👤 Logged in as:**")
+    st.markdown(f"**{st.session_state.user_info['full_name']}**")
+    st.markdown(f"*{st.session_state.user_info['role'].replace('_', ' ').title()}*")
+    st.caption(f"📧 {st.session_state.user_info['email']}")
+    st.caption(f"🏢 {st.session_state.user_info['department']}")
+    
+    if st.button("🚪 Logout", use_container_width=True):
+        logout()
+    
+    st.markdown("---")
 
-# =========================================================
 # UTILS
 # =========================================================
 def status_badge(status: str):
@@ -94,18 +179,24 @@ excel_handler, email_processor, reminder_scheduler, manual_processor = initializ
 # =========================================================
 st.sidebar.header("Navigation")
 
-menu = st.sidebar.radio(
-    "Select Action",
-    [
-        "📥 View Follow-ups",
-        "📧 Process Emails",
-        "⏰ Run Reminder Scheduler",
-        "✍️ Manual Entry",
-        "📄 Bulk MOM Upload",
-        "⚠️ Shoddy Check",  # ✨ NEW
-        "📊 Logs / Status"
-    ]
-)
+# Build menu based on permissions
+menu_options = ["📥 View Follow-ups"]
+
+if st.session_state.permissions.get('send_reminders'):
+    menu_options.extend(["📧 Process Emails", "⏰ Run Reminder Scheduler"])
+
+if st.session_state.permissions.get('create_tasks'):
+    menu_options.extend(["✍️ Manual Entry", "📄 Bulk MOM Upload"])
+
+if st.session_state.permissions.get('manage_shoddy'):
+    menu_options.append("⚠️ Shoddy Check")
+
+if st.session_state.permissions.get('manage_users'):
+    menu_options.append("👥 User Management")
+
+menu_options.append("📊 Logs / Status")
+
+menu = st.sidebar.radio("Select Action", menu_options)
 
 # =========================================================
 # 1. VIEW FOLLOW-UPS
@@ -114,6 +205,9 @@ if menu == "📥 View Follow-ups":
     st.subheader("Follow-ups")
 
     df = excel_handler.load_data()
+    
+    # ✨ FILTER TASKS BY USER ROLE
+    df = user_manager.filter_tasks_by_user(df, st.session_state.user_info)
 
     if df.empty:
         st.info("No follow-ups available.")
