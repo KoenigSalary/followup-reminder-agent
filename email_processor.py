@@ -53,7 +53,7 @@ class EmailProcessor:
             "Noted.\n\n"
             "This task is being tracked and reminder notifications are active until completion.\n\n"
             "Regards,\n"
-            "CEO Follow-up Agent"
+            "Task Followup Team"
         )
 
         msg = MIMEMultipart()
@@ -80,7 +80,8 @@ class EmailProcessor:
 
         df = excel_handler.load_data()
         sent_count = 0
-
+"Best regards,\n"
+            "Task Follow-up Team"
         for idx, row in df.iterrows():
             auto_reply = str(row.get("Auto Reply Sent", "")).strip().lower()
 
