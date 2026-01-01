@@ -17,7 +17,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Configuration
-HR_EMAIL = "hr@koenig-solutions.com"
+HR_EMAIL = "Praveen.chaudhary@koenig-solutions.com"
 TASK_FILE = "data/tasks_registry.xlsx"
 SHODDY_LOG_FILE = "data/shoddy_log.xlsx"
 TEAM_FILE = "data/Team_Directory.xlsx"
