@@ -193,21 +193,32 @@ elif menu == "✍️ Manual Entry":
     st.subheader("Add Manual Follow-up")
 
     with st.form("manual_entry_form"):
-        subject = st.text_input("Subject")
-        owner = st.text_input("Owner (Name)")
-        due_date = st.date_input("Due Date")
-        remarks = st.text_area("Remarks")
+        owner = st.text_input("Owner (First Name)", placeholder="e.g., Sarika, Aditya, Praveen")
+        task_text = st.text_area("Task Description", placeholder="e.g., Review Q4 financial statements")
+        priority = st.selectbox("Priority", ["URGENT", "HIGH", "MEDIUM", "LOW"], index=2)
+        deadline_date = st.date_input("Deadline")
 
         submitted = st.form_submit_button("Save")
 
         if submitted:
-            manual_processor.add_entry(
-                subject=subject,
-                owner=owner,
-                due_date=due_date,
-                remarks=remarks
-            )
-            st.success("Manual follow-up added successfully.")
+            if owner and task_text:
+                result = manual_processor.add_manual_task(
+                    owner=owner,
+                    task_text=task_text,
+                    priority=priority,
+                    deadline_date=deadline_date,
+                    excel_handler=excel_handler
+                )
+                
+                if result['success']:
+                    st.success(result['message'])
+                    st.info(f"📋 Task ID: {result['task_id']}")
+                    st.info(f"👤 Assigned to: {result['owner']} ({result['employee_id']})")
+                    st.info(f"📧 Email sent to: {result['owner_email']}")
+                else:
+                    st.error(result['message'])
+            else:
+                st.warning("⚠️ Please fill in Owner and Task Description")
 
 # =========================================================
 # 5. BULK MOM UPLOAD 
