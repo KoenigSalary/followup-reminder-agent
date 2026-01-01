@@ -35,7 +35,7 @@ class ManualTaskProcessor:
         df = excel_handler.load_data()
         
         # Find existing manual tasks for today
-        today_manual_tasks = df[df['Task ID'].str.startswith(task_id)]
+        today_manual_tasks = df[df['task_id'].str.startswith(task_id)]
         next_seq = len(today_manual_tasks) + 1
         task_id = f"{task_id}-{next_seq:03d}"
         
@@ -56,19 +56,19 @@ class ManualTaskProcessor:
         
         # Create new task
         new_task = {
-            'Task ID': task_id,
-            'Meeting ID': 'MANUAL',
-            'Owner': owner,  # First name only for consistency
-            'Task Text': task_text,
-            'Status': 'OPEN',
-            'Created On': today.strftime('%Y-%m-%d'),
-            'Last Reminder Date': '',
-            'Priority': priority,
-            'Deadline': deadline_date.strftime('%Y-%m-%d'),
-            'Completed Date': '',
-            'Days Taken': '',
-            'Performance Rating': '',
-            'Auto Reply Sent': 'No'
+            'task_id': task_id,
+            'meeting_id': 'MANUAL',
+            'owner': owner,  # First name only for consistency
+            'task_text': task_text,
+            'status': 'OPEN',
+            'created_on': today.strftime('%Y-%m-%d'),
+            'last_reminder_date': '',
+            'priority': priority,
+            'deadline': deadline_date.strftime('%Y-%m-%d'),
+            'completed_date': '',
+            'days_taken': '',
+            'performance_rating': '',
+            'auto_reply_sent': 'No'
         }
         
         # Append to dataframe
