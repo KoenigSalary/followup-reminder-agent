@@ -29,15 +29,19 @@ class ManualTaskProcessor:
         
         # Generate unique task ID
         today = datetime.now()
-        task_id = f"MAN-{today.strftime('%Y%m%d')}"
+        task_id_prefix = f"MAN-{today.strftime('%Y%m%d')}"
         
         # Load existing tasks to get next sequence number
         df = excel_handler.load_data()
         
         # Find existing manual tasks for today
-        today_manual_tasks = df[df['task_id'].str.startswith(task_id)]
-        next_seq = len(today_manual_tasks) + 1
-        task_id = f"{task_id}-{next_seq:03d}"
+        if len(df) > 0 and 'task_id' in df.columns:
+            today_manual_tasks = df[df['task_id'].str.startswith(task_id_prefix, na=False)]
+            next_seq = len(today_manual_tasks) + 1
+        else:
+            next_seq = 1
+            
+        task_id = f"{task_id_prefix}-{next_seq:03d}"
         
         # Get owner's full details from Team Directory
         emp_info = get_employee_info(owner)
@@ -54,21 +58,22 @@ class ManualTaskProcessor:
         owner_department = emp_info['department']
         employee_id = emp_info['employee_id']
         
-        # Create new task
+        # Create new task - USE EXACT COLUMN NAMES FROM YOUR EXCEL
         new_task = {
             'task_id': task_id,
             'meeting_id': 'MANUAL',
             'owner': owner,  # First name only for consistency
             'task_text': task_text,
             'status': 'OPEN',
-            'created_on': today.strftime('%Y-%m-%d'),
-            'last_reminder_date': '',
+            'created_on': today.strftime('%Y-%m-%d %H:%M:%S'),
+            'last_reminder_on': None,
+            'last_reminder': None,
+            'last_reminder_date': None,
             'priority': priority,
             'deadline': deadline_date.strftime('%Y-%m-%d'),
-            'completed_date': '',
-            'days_taken': '',
-            'performance_rating': '',
-            'auto_reply_sent': 'No'
+            'completed_date': None,
+            'days_taken': None,
+            'performance_rating': None
         }
         
         # Append to dataframe
@@ -119,28 +124,3 @@ Koenig Solutions
             'owner_email': owner_email,
             'employee_id': employee_id
         }
-
-
-# Test function
-if __name__ == "__main__":
-    print("Testing Manual Task Processor...")
-    
-    # Simulate task creation
-    from excel_handler import ExcelHandler
-    
-    processor = ManualTaskProcessor()
-    excel_handler = ExcelHandler()
-    
-    test_deadline = datetime(2026, 1, 10)
-    
-    result = processor.add_manual_task(
-        owner="Sarika",
-        task_text="Review Q4 financial statements",
-        priority="HIGH",
-        deadline_date=test_deadline,
-        excel_handler=excel_handler
-    )
-    
-    print("\n" + "="*70)
-    print(result)
-    print("="*70)
