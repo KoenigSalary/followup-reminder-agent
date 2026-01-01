@@ -273,31 +273,80 @@ elif menu == "📄 Bulk MOM Upload":
         if not mom_text.strip():
             st.warning("⚠️ Please paste MOM content")
         else:
-            from bulk_mom_processor import parse_bulk_mom
-            from task_registry import append_tasks
-            from priority_manager import get_priority_emoji
-            
-            tasks = parse_bulk_mom(
-                mom_subject=mom_subject,
-                mom_text=mom_text,
-                default_owner=default_owner,
-                default_deadline_days=deadline_days
-            )
-            
-            append_tasks(tasks)
-            
-            st.success(f"✅ {len(tasks)} task(s) created!")
-            
-            # Show tasks with priorities
-            st.markdown("### 📋 Created Tasks")
-            
-            for task in tasks:
-                emoji = get_priority_emoji(task["priority"])
-                st.markdown(
-                    f"{emoji} **{task['priority'].upper()}** | "
-                    f"{task['task_text']} → {task['owner']} "
-                    f"(Deadline: {task['deadline']})"
+            try:
+                from bulk_mom_processor import parse_bulk_mom
+                from priority_manager import get_priority_emoji
+                import pandas as pd
+                from datetime import datetime, timedelta
+                from pathlib import Path
+                
+                # Parse MOM
+                tasks = parse_bulk_mom(
+                    mom_subject=mom_subject,
+                    mom_text=mom_text,
+                    default_owner=default_owner,
+                    default_deadline_days=deadline_days
                 )
+                
+                if tasks:
+                    # SAVE TO EXCEL DIRECTLY (Don't rely on append_tasks)
+                    task_file = "data/tasks_registry.xlsx"
+                    
+                    # Load existing tasks
+                    if Path(task_file).exists():
+                        df_existing = pd.read_excel(task_file)
+                    else:
+                        df_existing = pd.DataFrame()
+                    
+                    # Convert tasks to DataFrame
+                    new_rows = []
+                    for task in tasks:
+                        new_row = {
+                            "task_id": task["task_id"],
+                            "meeting_id": task["meeting_id"],
+                            "owner": task["owner"],
+                            "task_text": task["task_text"],
+                            "status": task["status"],
+                            "created_on": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                            "last_reminder_on": task.get("last_reminder"),
+                            "last_reminder": None,
+                            "last_reminder_date": None,
+                            "priority": task.get("priority", "MEDIUM"),
+                            "deadline": task.get("deadline"),
+                            "completed_date": None,
+                            "days_taken": None,
+                            "performance_rating": None
+                        }
+                        new_rows.append(new_row)
+                    
+                    # Combine and save
+                    new_df = pd.DataFrame(new_rows)
+                    combined = pd.concat([df_existing, new_df], ignore_index=True)
+                    combined.to_excel(task_file, index=False)
+                    
+                    st.success(f"✅ {len(tasks)} task(s) saved to registry!")
+                    
+                    # Show tasks with priorities
+                    st.markdown("### 📋 Created Tasks")
+                    for task in tasks:
+                        emoji = get_priority_emoji(task["priority"])
+                        st.write(f"{emoji} **{task['owner']}**: {task['task_text']}")
+                    
+                    # Show summary
+                    st.markdown("### 📊 Summary by Owner")
+                    owner_counts = new_df["owner"].value_counts()
+                    for owner, count in owner_counts.items():
+                        st.write(f"- **{owner}**: {count} task(s)")
+                    
+                    st.balloons()
+                    
+                else:
+                    st.warning("No tasks extracted. Use @username to assign tasks.")
+                    
+            except Exception as e:
+                st.error(f"❌ Error: {str(e)}")
+                import traceback
+                st.code(traceback.format_exc())
 
 # =========================================================
 # 6. SHODDY CHECK
