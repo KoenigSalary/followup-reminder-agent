@@ -40,53 +40,54 @@ NAME_MAP = {
 
 def get_employee_info(owner):
     """
-    Get complete employee information
+    Get complete employee information from Team Directory
     
     Args:
         owner: First name, department, or email
     
     Returns:
-        dict: {'full_name', 'employee_id', 'department'}
+        dict: Employee info with full_name, employee_id, department, email
     """
+    import pandas as pd
+    from pathlib import Path
+    
+    team_dir = Path("data/Team_Directory.xlsx")
+    
+    if not team_dir.exists():
+        return None
+    
     try:
-        # Try Team Directory
-        if Path(TEAM_FILE).exists():
-            df = pd.read_excel(TEAM_FILE)
-            
-            # Match by name
-            match = df[df["Name"].str.lower().str.contains(owner.lower(), na=False)]
-            if not match.empty:
-                row = match.iloc[0]
-                return {
-                    'full_name': row["Name"],
-                    'employee_id': row.get("Employee_ID", "N/A"),
-                    'department': row.get("Department", "N/A")
-                }
-            
-            # Match by email
-            if "@" in owner:
-                match = df[df["Email"].str.lower() == owner.lower()]
-                if not match.empty:
-                    row = match.iloc[0]
-                    return {
-                        'full_name': row["Name"],
-                        'employee_id': row.get("Employee_ID", "N/A"),
-                        'department': row.get("Department", "N/A")
-                    }
+        df = pd.read_excel(team_dir)
         
-        # Fallback
-        return {
-            'full_name': NAME_MAP.get(owner, owner),
-            'employee_id': 'N/A',
-            'department': 'N/A'
-        }
+        # Search by first name (case-insensitive)
+        for idx, row in df.iterrows():
+            name = str(row['Name'])
+            first_name = name.split()[0].lower()
+            
+            if first_name == owner.lower():
+                return {
+                    'full_name': row['Name'],
+                    'employee_id': row['Employee_ID'],
+                    'department': row['Department'],
+                    'email': row['Email']
+                }
+        
+        # If not found by first name, try department
+        dept_match = df[df['Department'].str.lower() == owner.lower()]
+        if not dept_match.empty:
+            row = dept_match.iloc[0]
+            return {
+                'full_name': row['Name'],
+                'employee_id': row['Employee_ID'],
+                'department': row['Department'],
+                'email': row['Email']
+            }
+        
+        return None
         
     except Exception as e:
-        return {
-            'full_name': NAME_MAP.get(owner, owner),
-            'employee_id': 'N/A',
-            'department': 'N/A'
-        }
+        print(f"Error reading Team Directory: {e}")
+        return None
 
 
 def validate_dataframe_columns(df, required_columns):
