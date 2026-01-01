@@ -193,7 +193,7 @@ if st.session_state.permissions.get('manage_shoddy'):
 if st.session_state.permissions.get('manage_users'):
     menu_options.append("👥 User Management")
 
-menu_options.append("📊 Logs / Status")
+menu_options.extend(["🔑 Change Password", "📊 Logs / Status"])
 
 menu = st.sidebar.radio("Select Action", menu_options)
 
@@ -570,6 +570,78 @@ elif menu == "⚠️ Shoddy Check":
 # =========================================================
 # 7. LOGS / STATUS
 # =========================================================
+
+# =========================================================
+# CHANGE PASSWORD
+# =========================================================
+elif menu == "🔑 Change Password":
+    st.subheader("🔑 Change Your Password")
+    
+    st.info("💡 Use a strong password with at least 6 characters")
+    
+    with st.form("change_password_form"):
+        current_password = st.text_input("Current Password", type="password")
+        new_password = st.text_input("New Password", type="password")
+        confirm_password = st.text_input("Confirm New Password", type="password")
+        
+        submitted = st.form_submit_button("🔐 Change Password", use_container_width=True)
+        
+        if submitted:
+            if not current_password or not new_password or not confirm_password:
+                st.error("❌ Please fill all fields")
+            elif len(new_password) < 6:
+                st.error("❌ Password must be at least 6 characters")
+            elif new_password != confirm_password:
+                st.error("❌ New passwords don't match")
+            else:
+                # Verify current password
+                user_info = user_manager.authenticate(
+                    st.session_state.user_info['username'],
+                    current_password
+                )
+                
+                if not user_info:
+                    st.error("❌ Current password is incorrect")
+                else:
+                    # Change password
+                    success = user_manager.change_password(
+                        st.session_state.user_info['username'],
+                        new_password
+                    )
+                    
+                    if success:
+                        st.success("✅ Password changed successfully!")
+                        st.info("💡 Please use your new password next time you login")
+                        
+                        # Send confirmation email
+                        try:
+                            email_body = f"""Dear {st.session_state.user_info['full_name']},
+
+Your password has been changed successfully.
+
+Account Details:
+- Username: {st.session_state.user_info['username']}
+- Changed on: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+
+If you did not make this change, please contact IT immediately.
+
+Best regards,
+Task Follow-up System
+Koenig Solutions
+"""
+                            
+                            email_processor.send_email(
+                                to_email=st.session_state.user_info['email'],
+                                subject="🔐 Password Changed Successfully",
+                                body=email_body
+                            )
+                            
+                            st.success("📧 Confirmation email sent to your email address")
+                        except:
+                            pass  # Email is optional
+                    else:
+                        st.error("❌ Failed to change password. Please try again.")
+
 elif menu == "📊 Logs / Status":
     st.subheader("System Status")
 
