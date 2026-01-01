@@ -150,7 +150,7 @@ Please take appropriate action as per company policy.
 For any queries, contact: {SMTP_USERNAME}
 
 Regards,
-{Task Followup Team}
+Task Followup Team
         """
         
         msg.attach(MIMEText(body, "plain"))
