@@ -545,3 +545,5 @@ elif menu == "⚙️ Run Engines":
             st.success("Reminder process completed")
             st.code(out)
 
+
+# Rebuild trigger - Thu Jan  1 16:53:52 IST 2026
