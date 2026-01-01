@@ -87,7 +87,7 @@ This is a gentle reminder for the following pending action items:
 Kindly let me know once completed.
 
 Regards,
-Praveen
+Task Followup Team
 """
     msg.set_content(body)
     return msg

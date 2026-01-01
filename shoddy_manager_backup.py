@@ -1,216 +1,281 @@
 """
-Shoddy Manager
-Handles missed deadline notifications and performance tracking
+Shoddy Manager - With Employee ID Support
+------------------------------------------
+Enhanced version with Employee ID, Full Name, and Department
 """
 
-import os
-import smtplib
 import pandas as pd
-from email.message import EmailMessage
-from datetime import datetime, timedelta
+from datetime import datetime
 from pathlib import Path
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
+import os
 from dotenv import load_dotenv
 
+# Load environment
 load_dotenv()
 
-BASE_DIR = Path(__file__).resolve().parent
+# Configuration
+HR_EMAIL = "Praveen.chaudhary@koenig-solutions.com"
+TASK_FILE = "data/tasks_registry.xlsx"
+SHODDY_LOG_FILE = "data/shoddy_log.xlsx"
+TEAM_FILE = "data/Team_Directory.xlsx"
 
-# ================= CONFIG =================
-HR_EMAIL = "hr@koenig-solutions.com"
-CC_EMAIL = os.getenv("SMTP_USERNAME", "praveen.chaudhary@koenig-solutions.com")
-
-SMTP_SERVER = "smtp.office365.com"
-SMTP_PORT = 587
-SMTP_USERNAME = os.getenv("SMTP_USERNAME")
+# Email config
+SMTP_USERNAME = os.getenv("SMTP_USERNAME", "praveen.chaudhary@koenig-solutions.com")
 SMTP_PASSWORD = os.getenv("CEO_AGENT_EMAIL_PASSWORD")
+AGENT_SENDER_NAME = os.getenv("AGENT_SENDER_NAME", "Task Followup Agent")
 
-TASK_FILE = BASE_DIR / "data" / "tasks_registry.xlsx"
-TEAM_FILE = BASE_DIR / "data" / "Team_Directory.xlsx"
-SHODDY_LOG_FILE = BASE_DIR / "data" / "shoddy_log.xlsx"
-
-
-# ================= HELPER FUNCTIONS =================
-def resolve_email(owner: str) -> str:
-    """Resolve owner name to email"""
-    if "@" in owner:
-        return owner
-    
-    try:
-        df = pd.read_excel(TEAM_FILE)
-        match = df[df["Name"].str.lower() == owner.lower()]
-        if not match.empty:
-            return match.iloc[0]["Email"]
-    except Exception as e:
-        print(f"Error resolving email for {owner}: {e}")
-    
-    return None
+# Name mapping (fallback)
+NAME_MAP = {
+    "Aditya": "Aditya Kumar",
+    "Anurag": "Anurag Sharma",
+    "Praveen": "Praveen Chaudhary",
+    "Tax": "Tax Department",
+    "Finance": "Finance Team",
+    "HR": "HR Department"
+}
 
 
-def init_shoddy_log():
-    """Initialize shoddy log file"""
-    if not SHODDY_LOG_FILE.exists():
-        df = pd.DataFrame(columns=[
-            "shoddy_date",
-            "task_id",
-            "task_text",
-            "owner",
-            "owner_email",
-            "deadline",
-            "days_overdue",
-            "priority",
-            "email_sent",
-            "hr_notified"
-        ])
-        df.to_excel(SHODDY_LOG_FILE, index=False)
-
-
-def log_shoddy(task: dict, days_overdue: int):
-    """Log shoddy incident"""
-    init_shoddy_log()
-    
-    df = pd.read_excel(SHODDY_LOG_FILE)
-    
-    # Check if already logged
-    if not df.empty and task["task_id"] in df["task_id"].values:
-        return  # Already logged
-    
-    new_entry = {
-        "shoddy_date": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-        "task_id": task["task_id"],
-        "task_text": task["task_text"],
-        "owner": task["owner"],
-        "owner_email": task.get("owner_email", ""),
-        "deadline": task["deadline"],
-        "days_overdue": days_overdue,
-        "priority": task.get("priority", "medium"),
-        "email_sent": True,
-        "hr_notified": True
-    }
-    
-    df = pd.concat([df, pd.DataFrame([new_entry])], ignore_index=True)
-    df.to_excel(SHODDY_LOG_FILE, index=False)
-
-
-# ================= EMAIL FUNCTIONS =================
-def send_shoddy_email(owner: str, owner_email: str, task: dict, days_overdue: int):
+def get_employee_info(owner):
     """
-    Send shoddy notification to HR
+    Get complete employee information
     
-    Subject: Shoddy Marked - [Owner Name]
+    Args:
+        owner: First name, department, or email
+    
+    Returns:
+        dict: {'full_name', 'employee_id', 'department'}
     """
-    
-    if not SMTP_USERNAME or not SMTP_PASSWORD:
-        print("⚠️ Email credentials not configured")
-        return False
-    
     try:
-        msg = EmailMessage()
-        msg["From"] = f"Task Followup Agent <{SMTP_USERNAME}>"
-        msg["To"] = HR_EMAIL
-        msg["Cc"] = CC_EMAIL
-        msg["Subject"] = f"Shoddy Marked - {owner}"
+        # Try Team Directory
+        if Path(TEAM_FILE).exists():
+            df = pd.read_excel(TEAM_FILE)
+            
+            # Match by name
+            match = df[df["Name"].str.lower().str.contains(owner.lower(), na=False)]
+            if not match.empty:
+                row = match.iloc[0]
+                return {
+                    'full_name': row["Name"],
+                    'employee_id': row.get("Employee_ID", "N/A"),
+                    'department': row.get("Department", "N/A")
+                }
+            
+            # Match by email
+            if "@" in owner:
+                match = df[df["Email"].str.lower() == owner.lower()]
+                if not match.empty:
+                    row = match.iloc[0]
+                    return {
+                        'full_name': row["Name"],
+                        'employee_id': row.get("Employee_ID", "N/A"),
+                        'department': row.get("Department", "N/A")
+                    }
         
-        body = f"""Dear HR Team,
+        # Fallback
+        return {
+            'full_name': NAME_MAP.get(owner, owner),
+            'employee_id': 'N/A',
+            'department': 'N/A'
+        }
+        
+    except Exception as e:
+        return {
+            'full_name': NAME_MAP.get(owner, owner),
+            'employee_id': 'N/A',
+            'department': 'N/A'
+        }
 
-Please mark SHODDY against {owner}.
 
-Task Details:
--------------
-Task ID     : {task['task_id']}
-Task        : {task['task_text']}
-Assigned To : {owner}
-Email       : {owner_email or 'Not found'}
-Priority    : {task.get('priority', 'medium').upper()}
-Deadline    : {task['deadline']}
-Days Overdue: {days_overdue} days
+def validate_dataframe_columns(df, required_columns):
+    """Validate DataFrame columns"""
+    missing = [col for col in required_columns if col not in df.columns]
+    return (len(missing) == 0, missing)
 
-Meeting/Source: {task.get('meeting_id', 'N/A')}
 
-This task has exceeded its deadline and remains incomplete.
+def send_shoddy_email(task_row):
+    """Send shoddy notification to HR"""
+    try:
+        if not SMTP_PASSWORD:
+            print("⚠️  Warning: Email password not configured")
+            return False
+        
+        # Get employee info
+        emp_info = get_employee_info(task_row['owner'])
+        
+        # Create email
+        msg = MIMEMultipart()
+        msg["From"] = f"{AGENT_SENDER_NAME} <{SMTP_USERNAME}>"
+        msg["To"] = HR_EMAIL
+        msg["Subject"] = f"⚠️ Shoddy Marked - {emp_info['full_name']} ({emp_info['employee_id']})"
+        
+        # Calculate days overdue
+        deadline = pd.to_datetime(task_row["deadline"])
+        days_overdue = (datetime.now() - deadline).days
+        
+        # Email body
+        body = f"""
+Dear HR Team,
 
----
-This is an automated notification from Task Followup Agent.
+Please mark shoddy against the following employee for missing task deadline:
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+EMPLOYEE DETAILS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Employee ID: {emp_info['employee_id']}
+Full Name: {emp_info['full_name']}
+Department: {emp_info['department']}
+System ID: {task_row['owner']}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+TASK DETAILS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Task ID: {task_row['task_id']}
+Task Description: {task_row['task_text']}
+Priority: {task_row.get('priority', 'MEDIUM')}
+Original Deadline: {deadline.strftime('%d-%b-%Y')}
+Days Overdue: {days_overdue} day(s)
+
+Source Meeting: {task_row.get('meeting_id', 'N/A')}
+Task Created On: {task_row.get('created_on', 'N/A')}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+This is an automated notification from the Task Followup System.
+
+Please take appropriate action as per company policy.
+
+For any queries, contact: {SMTP_USERNAME}
 
 Regards,
-Task Followup System
-"""
+{AGENT_SENDER_NAME}
+        """
         
-        msg.set_content(body)
+        msg.attach(MIMEText(body, "plain"))
         
-        # Send email
-        server = smtplib.SMTP(SMTP_SERVER, SMTP_PORT)
-        server.starttls()
-        server.login(SMTP_USERNAME, SMTP_PASSWORD)
-        server.send_message(msg)
-        server.quit()
+        # Send
+        with smtplib.SMTP("smtp.office365.com", 587) as server:
+            server.starttls()
+            server.login(SMTP_USERNAME, SMTP_PASSWORD)
+            server.send_message(msg)
         
-        print(f"✅ Shoddy email sent for {owner}")
-        
-        # Log the incident
-        task["owner_email"] = owner_email
-        log_shoddy(task, days_overdue)
-        
+        print(f"   ✅ Shoddy email sent for: {emp_info['full_name']} ({emp_info['employee_id']})")
         return True
         
     except Exception as e:
-        print(f"❌ Failed to send shoddy email: {e}")
+        print(f"   ❌ Failed to send email: {str(e)}")
         return False
 
 
-# ================= MAIN CHECK FUNCTION =================
-def check_overdue_tasks():
-    """
-    Check for overdue tasks and send shoddy emails
-    
-    Returns:
-        Number of shoddy emails sent
-    """
-    
-    df = pd.read_excel(TASK_FILE)
-    
-    # Filter: Only OPEN tasks with deadlines
-    df = df[df["status"] == "OPEN"]
-    df = df[df["deadline"].notna()]
-    
-    if df.empty:
-        print("No open tasks with deadlines")
-        return 0
-    
-    today = datetime.now().date()
-    sent_count = 0
-    
-    for _, task in df.iterrows():
-        # Parse deadline
-        deadline = pd.to_datetime(task["deadline"]).date()
+def log_shoddy(task_row):
+    """Log shoddy incident"""
+    try:
+        emp_info = get_employee_info(task_row['owner'])
+        deadline = pd.to_datetime(task_row["deadline"])
+        days_overdue = (datetime.now() - deadline).days
         
-        # Check if overdue
-        if deadline < today:
-            days_overdue = (today - deadline).days
-            
-            owner = task["owner"]
-            owner_email = resolve_email(owner)
-            
-            if not owner_email:
-                print(f"⚠️ No email found for {owner}, skipping shoddy notification")
-                continue
-            
-            task_dict = {
-                "task_id": task["task_id"],
-                "task_text": task["task_text"],
-                "owner": owner,
-                "deadline": deadline.strftime("%Y-%m-%d"),
-                "meeting_id": task.get("meeting_id", ""),
-                "priority": task.get("priority", "medium")
-            }
-            
-            # Send shoddy email
-            if send_shoddy_email(owner, owner_email, task_dict, days_overdue):
-                sent_count += 1
+        log_entry = {
+            "date": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "employee_id": emp_info['employee_id'],
+            "full_name": emp_info['full_name'],
+            "department": emp_info['department'],
+            "system_id": task_row["owner"],
+            "task_id": task_row["task_id"],
+            "task_text": task_row["task_text"],
+            "priority": task_row.get("priority", "MEDIUM"),
+            "deadline": deadline.strftime("%Y-%m-%d"),
+            "days_overdue": days_overdue,
+            "meeting_id": task_row.get("meeting_id", "N/A")
+        }
+        
+        # Load or create
+        if Path(SHODDY_LOG_FILE).exists():
+            log_df = pd.read_excel(SHODDY_LOG_FILE)
+        else:
+            log_df = pd.DataFrame(columns=list(log_entry.keys()))
+        
+        # Append
+        log_df = pd.concat([log_df, pd.DataFrame([log_entry])], ignore_index=True)
+        log_df.to_excel(SHODDY_LOG_FILE, index=False)
+        
+        print(f"   ✅ Logged shoddy for: {emp_info['full_name']} ({emp_info['employee_id']})")
+        return True
+        
+    except Exception as e:
+        print(f"   ❌ Failed to log: {str(e)}")
+        return False
+
+
+def check_overdue_tasks():
+    """Check for overdue tasks"""
+    print("\n" + "=" * 60)
+    print("⏰ CHECKING OVERDUE TASKS")
+    print("=" * 60)
     
-    return sent_count
+    try:
+        if not Path(TASK_FILE).exists():
+            print(f"❌ Task file not found: {TASK_FILE}")
+            return 0
+        
+        df = pd.read_excel(TASK_FILE)
+        print(f"✓ Loaded {len(df)} total tasks")
+        
+        # Validate
+        required = ["task_id", "task_text", "owner", "status", "deadline", "priority"]
+        is_valid, missing = validate_dataframe_columns(df, required)
+        
+        if not is_valid:
+            print(f"❌ Missing columns: {missing}")
+            return 0
+        
+        # Filter
+        df = df[df["status"] == "OPEN"]
+        print(f"✓ Found {len(df)} OPEN tasks")
+        
+        df = df[df["deadline"].notna()]
+        print(f"✓ Found {len(df)} tasks with deadlines")
+        
+        df["deadline"] = pd.to_datetime(df["deadline"])
+        
+        # Find overdue
+        today = datetime.now()
+        overdue = df[df["deadline"] < today]
+        
+        if len(overdue) == 0:
+            print("✅ No overdue tasks!")
+            return 0
+        
+        print(f"\n⚠️  Found {len(overdue)} OVERDUE tasks:")
+        
+        # Process
+        shoddy_count = 0
+        for idx, task in overdue.iterrows():
+            emp_info = get_employee_info(task['owner'])
+            days_overdue = (today - task["deadline"]).days
+            
+            print(f"\n   📌 {task['task_id']}")
+            print(f"      Employee: {emp_info['full_name']} ({emp_info['employee_id']})")
+            print(f"      Task: {task['task_text'][:50]}...")
+            print(f"      Overdue: {days_overdue} days")
+            
+            if send_shoddy_email(task):
+                log_shoddy(task)
+                shoddy_count += 1
+        
+        print("\n" + "=" * 60)
+        print(f"✅ Complete: {shoddy_count} notifications sent")
+        print("=" * 60)
+        
+        return shoddy_count
+        
+    except Exception as e:
+        print(f"❌ Error: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return 0
 
 
 if __name__ == "__main__":
-    print("🔍 Checking for overdue tasks...\n")
-    count = check_overdue_tasks()
-    print(f"\n📧 Sent {count} shoddy notification(s)")
+    check_overdue_tasks()

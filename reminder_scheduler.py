@@ -100,7 +100,7 @@ class ReminderScheduler:
                 body = f"""
 Hello,
 
-This is a reminder for the following CEO follow-up:
+This is a reminder for the Pending Task:
 
 Subject  : {row.get('Subject')}
 Owner    : {row.get('Owner')}
@@ -109,7 +109,7 @@ Due Date : {due_date}
 Remarks  : {row.get('Remarks')}
 
 Regards,
-Task Followup Agent
+Task Followup Team
 """
                 self.email_processor.send_email(subject, body)
                 sent_count += 1

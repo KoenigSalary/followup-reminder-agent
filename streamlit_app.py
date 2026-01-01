@@ -241,7 +241,7 @@ elif menu == "📄 Bulk MOM Upload":
     mom_text = st.text_area(
         "📝 Paste MOM Content (one task per line)",
         height=300,
-        placeholder="Examples:\nUpdate TDS return. @Tax\nPrepare board presentation. @CEO\nReview report. @Finance"
+        placeholder="Examples:\nUpdate TDS return. @Tax\nPrepare board presentation. @TASK\nReview report. @Finance"
     )
     
     # Show priority legend
