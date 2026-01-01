@@ -60,15 +60,14 @@ def login():
     """Display login page"""
     st.set_page_config(page_title="Login - Task Follow-up System", layout="centered")
     
-    # Center logo
-    col1, col2, col3 = st.columns([1, 2, 1])
+    # Logo - slightly right of center
+    col1, col2, col3 = st.columns([1.6, 2, 0.7])
     with col2:
         if LOGO_PATH.exists():
-            st.image(str(LOGO_PATH), width=300)
-        st.markdown("##")  # Spacing
+            st.image(str(LOGO_PATH), width=150)  # Smaller logo
+        st.markdown("")  # Spacing
     
-    st.title("🔐 Task Follow-up System")
-    st.caption("Koenig Solutions")
+    st.markdown("<h1 style='text-align: center;'>🔐 Task Follow-up System</h1>", unsafe_allow_html=True)
     
     col1, col2, col3 = st.columns([1, 2, 1])
     
