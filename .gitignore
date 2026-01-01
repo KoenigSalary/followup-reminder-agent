@@ -22,3 +22,13 @@ venv/
 
 DEPLOYMENT_GUIDE.md
 DEPLOYMENT_GUIDE.md
+
+# Exception: Allow Team Directory (lookup data)
+
+# Exception: Allow Team Directory (lookup data)
+!data/Team_Directory.xlsx
+
+# Ignore backup files
+*_backup.py
+*_old.py
+*.save
