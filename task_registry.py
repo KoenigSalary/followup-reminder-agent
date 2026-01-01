@@ -2,6 +2,7 @@ import os
 import pandas as pd
 from datetime import datetime
 from datetime import timezone
+from config import TASK_FILE
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.path.join(BASE_DIR, "data")
@@ -16,9 +17,12 @@ COLUMNS = [
     "task_text",
     "owner",
     "status",
+    "priority",           # ✨ NEW
+    "deadline",           # ✨ NEW
+    "completed_date",     # ✨ NEW
     "created_by",
     "created_on",
-    "completed_on"
+    "last_reminder_date"
 ]
 
 def init_registry():
@@ -59,6 +63,15 @@ def add_tasks_from_mom(mom_data: dict):
         }
 
     save_registry(df)
+
+def append_tasks(tasks: list):
+    if TASK_FILE.exists():
+        df = pd.read_excel(TASK_FILE)
+    else:
+        df = pd.DataFrame()
+
+    df = pd.concat([df, pd.DataFrame(tasks)], ignore_index=True)
+    df.to_excel(TASK_FILE, index=False)
 
 def mark_task_completed(task_id: str):
     df = load_registry()

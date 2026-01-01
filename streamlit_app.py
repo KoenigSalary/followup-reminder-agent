@@ -101,7 +101,8 @@ menu = st.sidebar.radio(
         "📧 Process Emails",
         "⏰ Run Reminder Scheduler",
         "✍️ Manual Entry",
-        "⚙️ Run Engines",
+        "📄 Bulk MOM Upload",
+        "⚠️ Shoddy Check",  # ✨ NEW
         "📊 Logs / Status"
     ]
 )
@@ -209,7 +210,212 @@ elif menu == "✍️ Manual Entry":
             st.success("Manual follow-up added successfully.")
 
 # =========================================================
-# 5. LOGS / STATUS
+# 5. BULK MOM UPLOAD 
+# =========================================================
+elif menu == "📄 Bulk MOM Upload":
+    st.subheader("📄 Bulk MOM Upload")
+    
+    col1, col2, col3 = st.columns([2, 1, 1])
+    
+    with col1:
+        mom_subject = st.text_input(
+            "MOM Subject/Title",
+            placeholder="e.g., MOM-20250131 | Finance Team Meeting"
+        )
+    
+    with col2:
+        default_owner = st.text_input(
+            "Default Owner",
+            value="Praveen"
+        )
+    
+    with col3:
+        deadline_days = st.number_input(
+            "Deadline (Days)",
+            min_value=1,
+            max_value=30,
+            value=None,
+            help="Leave empty for auto-priority calculation"
+        )
+    
+    mom_text = st.text_area(
+        "📝 Paste MOM Content (one task per line)",
+        height=300,
+        placeholder="Examples:\nUpdate TDS return. @Tax\nPrepare board presentation. @CEO\nReview report. @Finance"
+    )
+    
+    # Show priority legend
+    with st.expander("ℹ️ Priority Rules"):
+        st.markdown("""
+        **Automatic Priority Assignment:**
+        
+        🔴 **URGENT** (1 day deadline):
+        - Tax/Statutory tasks (TDS, GST, VAT, Filing)
+        - Contains "urgent", "asap", "immediately"
+        - Critical departments (Finance, Tax, CEO, Legal)
+        - Deadline < 2 days
+        
+        🟠 **HIGH** (3 days deadline):
+        - Reports, Presentations, Approvals
+        - Contains "important", "essential", "crucial"
+        - High-priority departments (HR, Operations, Sales)
+        - Deadline < 5 days
+        
+        🟡 **MEDIUM** (7 days deadline):
+        - Regular tasks
+        - Deadline < 10 days
+        
+        🟢 **LOW** (14 days deadline):
+        - Routine tasks, no specific deadline
+        """)
+    
+    if st.button("📤 Process & Save MOM Tasks", type="primary"):
+        if not mom_text.strip():
+            st.warning("⚠️ Please paste MOM content")
+        else:
+            from bulk_mom_processor import parse_bulk_mom
+            from task_registry import append_tasks
+            from priority_manager import get_priority_emoji
+            
+            tasks = parse_bulk_mom(
+                mom_subject=mom_subject,
+                mom_text=mom_text,
+                default_owner=default_owner,
+                default_deadline_days=deadline_days
+            )
+            
+            append_tasks(tasks)
+            
+            st.success(f"✅ {len(tasks)} task(s) created!")
+            
+            # Show tasks with priorities
+            st.markdown("### 📋 Created Tasks")
+            
+            for task in tasks:
+                emoji = get_priority_emoji(task["priority"])
+                st.markdown(
+                    f"{emoji} **{task['priority'].upper()}** | "
+                    f"{task['task_text']} → {task['owner']} "
+                    f"(Deadline: {task['deadline']})"
+                )
+
+# =========================================================
+# 6. SHODDY CHECK
+# =========================================================
+elif menu == "⚠️ Shoddy Check":
+    st.subheader("⚠️ Overdue Tasks & Shoddy Management")
+    
+    st.info("Check for overdue tasks and send shoddy notifications to HR")
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        if st.button("🔍 Check Overdue Tasks", type="primary"):
+            with st.spinner("Checking overdue tasks..."):
+                from shoddy_manager import check_overdue_tasks
+                count = check_overdue_tasks()
+            
+            if count > 0:
+                st.error(f"⚠️ Sent {count} shoddy notification(s) to HR")
+            else:
+                st.success("✅ No overdue tasks found!")
+    
+    with col2:
+        if st.button("📋 View Shoddy Log"):
+            import pandas as pd
+            from pathlib import Path
+            
+            log_file = Path("data/shoddy_log.xlsx")
+            
+            if log_file.exists():
+                df = pd.read_excel(log_file)
+                
+                if not df.empty:
+                    st.dataframe(
+                        df[["shoddy_date", "owner", "task_text", "days_overdue", "priority"]],
+                        use_container_width=True
+                    )
+                    
+                    # Stats
+                    st.markdown("### 📊 Statistics")
+                    col1, col2, col3 = st.columns(3)
+                    
+                    with col1:
+                        st.metric("Total Shoddy", len(df))
+                    
+                    with col2:
+                        owner_counts = df["owner"].value_counts()
+                        worst_performer = owner_counts.index[0] if not owner_counts.empty else "N/A"
+                        st.metric("Most Shoddy", worst_performer)
+                    
+                    with col3:
+                        avg_overdue = df["days_overdue"].mean()
+                        st.metric("Avg Days Overdue", f"{avg_overdue:.1f}")
+                else:
+                    st.info("No shoddy incidents recorded")
+            else:
+                st.info("No shoddy log file found")
+    
+    st.divider()
+    
+    # Acknowledgement section
+    st.subheader("🎉 Send Acknowledgement")
+    
+    st.info("Manually send acknowledgement for completed task")
+    
+    with st.form("send_acknowledgement"):
+        ack_owner = st.text_input("Owner Name")
+        ack_email = st.text_input("Owner Email")
+        ack_task_id = st.text_input("Task ID")
+        ack_task_text = st.text_area("Task Description")
+        ack_rating = st.selectbox(
+            "Performance Rating",
+            ["excellent", "good", "well done", "completed"]
+        )
+        
+        if st.form_submit_button("📧 Send Acknowledgement"):
+            if ack_owner and ack_email and ack_task_text:
+                from acknowledgement_manager import send_acknowledgement
+                
+                task = {
+                    "task_id": ack_task_id,
+                    "task_text": ack_task_text,
+                    "priority": "medium",
+                    "deadline": datetime.now().strftime("%Y-%m-%d"),
+                    "completed_date": datetime.now().strftime("%Y-%m-%d"),
+                    "meeting_id": "Manual"
+                }
+                
+                performance = {
+                    "excellent": {
+                        "rating": "excellent",
+                        "emoji": "🌟",
+                        "message": "Outstanding performance!"
+                    },
+                    "good": {
+                        "rating": "good",
+                        "emoji": "👍",
+                        "message": "Good work!"
+                    },
+                    "well done": {
+                        "rating": "well done",
+                        "emoji": "✅",
+                        "message": "Well done!"
+                    },
+                    "completed": {
+                        "rating": "completed",
+                        "emoji": "✓",
+                        "message": "Task completed."
+                    }
+                }[ack_rating]
+                
+                send_acknowledgement(ack_owner, ack_email, task, performance)
+                st.success(f"✅ Acknowledgement sent to {ack_owner}")
+            else:
+                st.error("Please fill all fields")
+
+# =========================================================
+# 7. LOGS / STATUS
 # =========================================================
 elif menu == "📊 Logs / Status":
     st.subheader("System Status")

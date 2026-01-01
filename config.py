@@ -17,6 +17,7 @@ BASE_DIR = Path(__file__).resolve().parent
 # -------------------------------------------------
 DATA_DIR = BASE_DIR / "data"
 EXCEL_FILE_PATH = DATA_DIR / "auto_reply_sent.xlsx"
+TASK_FILE = DATA_DIR / "tasks_registry.xlsx"
 
 # -------------------------------------------------
 # Email Configuration (STANDARDIZED)
@@ -40,13 +41,6 @@ SENDER_NAME = "Praveen Chaudhary"
 # Validation (Cloud-safe)
 # -------------------------------------------------
 def validate_paths():
-    """
-    Ensure required folders and files exist.
-    Safe for:
-    - Local runs
-    - Fresh clone
-    - Streamlit Cloud
-    """
     DATA_DIR.mkdir(parents=True, exist_ok=True)
 
     if not EXCEL_FILE_PATH.exists():
@@ -62,3 +56,17 @@ def validate_paths():
             ]
         )
         df.to_excel(EXCEL_FILE_PATH, index=False)
+
+    if not TASK_FILE.exists():
+        task_df = pd.DataFrame(
+            columns=[
+                "task_id",
+                "meeting_id",
+                "owner",
+                "task_text",
+                "status",
+                "created_on",
+                "last_reminder_on"
+            ]
+        )
+        task_df.to_excel(TASK_FILE, index=False)
