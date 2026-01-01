@@ -35,7 +35,7 @@ from config import (
 from utils.excel_handler import ExcelHandler
 from email_processor import EmailProcessor
 from reminder_scheduler import ReminderScheduler, get_next_reminder_date
-from manual_processor import ManualProcessor
+from manual_processor import ManualTaskProcessor
 
 # =========================================================
 # PAGE CONFIG (must be first Streamlit call)
