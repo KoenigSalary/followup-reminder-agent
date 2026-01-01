@@ -84,7 +84,7 @@ def initialize_handlers():
     excel_handler = ExcelHandler(EXCEL_FILE_PATH)
     email_processor = EmailProcessor()
     reminder_scheduler = ReminderScheduler(EXCEL_FILE_PATH)
-    manual_processor = ManualTaskProcessor(EXCEL_FILE_PATH)
+    manual_processor = ManualTaskProcessor()
     return excel_handler, email_processor, reminder_scheduler, manual_processor
 
 excel_handler, email_processor, reminder_scheduler, manual_processor = initialize_handlers()
