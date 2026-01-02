@@ -36,7 +36,7 @@ class ManualTaskProcessor:
         
         # Find existing manual tasks for today
         if len(df) > 0 and 'task_id' in df.columns:
-            today_manual_tasks = df[df['task_id'].str.startswith(task_id_prefix, na=False)]
+            today_manual_tasks = df[df['task_id'].astype(str).str.startswith(task_id_prefix, na=False)]
             next_seq = len(today_manual_tasks) + 1
         else:
             next_seq = 1
