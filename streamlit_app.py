@@ -974,26 +974,7 @@ elif menu == "📄 Bulk MOM Upload":
                     st.error(f"❌ Error saving: {str(e)}")
                     import traceback
                     st.code(traceback.format_exc())
-                # In streamlit_app.py, Bulk MOM Upload section
-                new_rows = []
-                for i, task in enumerate(st.session_state.parsed_tasks):
-                    deadline_days = st.session_state.task_deadlines[i]
-                    deadline_date = (datetime.now() + timedelta(days=deadline_days)).strftime("%Y-%m-%d")
-    
-                    new_rows.append({
-                        "task_id": task['task_id'],
-                        "meeting_id": task['meeting_id'],
-                        "Owner": task['owner'],  # Changed from 'owner'
-                        "Subject": task['task_text'],  # Changed from 'task_text'
-                        "Status": task['status'],  # Changed from 'status'
-                        "created_on": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                        "Priority": task['priority'],  # Changed from 'priority'
-                        "Due Date": deadline_date,  # Changed from 'deadline'
-                        "Last Reminder Date": None,
-                        "Remarks": "",
-                        "cc": task.get('cc', '')
-                    })
-
+                
 # =========================================================
 # 6. SHODDY CHECK
 # =========================================================
