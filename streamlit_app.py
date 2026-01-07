@@ -993,6 +993,17 @@ elif menu == "📄 Bulk MOM Upload":
                 st.success(f"✅ Saved {len(new_rows)} tasks! Total in registry: {total}")
     
                 # Clear session
+                st.session_state.parsed_tasks = []
+                st.session_state.task_deadlines = []
+                st.session_state.mom_subject = ""
+                st.session_state.mom_cc = ""
+                st.rerun()
+
+# =========================================================
+# ⚠️ SHODDY CHECK
+# =========================================================
+elif menu == "⚠️ Shoddy Check":
+    st.title("⚠️ Shoddy Work Check")
     
     col1, col2 = st.columns(2)
     
