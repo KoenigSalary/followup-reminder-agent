@@ -120,6 +120,9 @@ def send_reminders():
             print(f"⚠️ No email found for owner: {owner}. Skipping.")
             continue
 
+        if pd.notna(task.get("cc")):
+            msg["Cc"] = task["cc"]
+
         # Check alternate-day rule (use latest reminder for this owner)
         last_reminder = group["last_reminder_date"].max()
 

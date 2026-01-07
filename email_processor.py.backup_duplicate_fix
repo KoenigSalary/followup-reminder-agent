@@ -204,50 +204,45 @@ class EmailProcessor:
                 if is_reply and email_body:
                     try:
                         if from_email and '@' in from_email:
-                             employee_name = from_email.split('@')[0].replace('.', ' ').title()
+                            employee_name = from_email.split('@')[0].replace('.', ' ').title()
                         else:
                             employee_name = "Team Member"
-        
+                        
                         print(f"\n🔍 Processing reply from {from_email}...")
-        
+                        
                         result = self.smart_processor.process_reply_and_update_tasks(
                             email_body=email_body,
                             from_email=from_email
                         )
-        
-                        # Track if we sent ANY email (prevent duplicates)
-                        email_sent = False
-        
+                        
                         if result['success'] and (result['completed'] or result['pending']):
                             ack_body = self.smart_processor.generate_acknowledgment_email(
                                 process_result=result,
                                 to_name=employee_name
                             )
-            
+                            
                             reply_subject = f"Re: {subject}" if not subject.startswith("Re:") else subject
                             self.send_smart_acknowledgment(
                                 to_email=from_email,
                                 subject=reply_subject,
                                 body=ack_body
                             )
-                            email_sent = True  # Mark as sent
-            
+                            
                             if result['completed']:
                                 print(f"\n🎉 Sending performance feedback for {len(result['completed'])} completed tasks...")
                                 self.send_performance_feedback(result['completed'])
-            
+                            
                             df.at[idx, "Auto Reply Sent"] = "Yes"
                             if "Processed Date" in df.columns:
                                 df.at[idx, "Processed Date"] = datetime.now()
-            
+                            
                             sent_count += 1
-            
+                            
                             print(f"✅ Smart processed reply from {from_email}")
                             print(f"   Completed: {len(result['completed'])} tasks")
                             print(f"   Pending: {len(result['pending'])} tasks")
-        
-                        # ONLY send standard auto-reply if smart processing found nothing
-                        if not email_sent:
+                            print(f"   Performance emails: {len(result['completed'])} sent")
+                        else:
                             print(f"ℹ️  No task updates found, sending standard reply")
                             self.send_auto_reply(
                                 to_email=from_email,
@@ -255,12 +250,11 @@ class EmailProcessor:
                             )
                             df.at[idx, "Auto Reply Sent"] = "Yes"
                             sent_count += 1
-            
+                            
                     except Exception as e:
                         print(f"❌ Error processing smart reply: {e}")
                         import traceback
                         traceback.print_exc()
-                        # Only send auto-reply on error if we haven't sent anything yet
                         self.send_auto_reply(
                             to_email=from_email if from_email else EMAIL_SENDER,
                             subject=subject
@@ -268,7 +262,6 @@ class EmailProcessor:
                         df.at[idx, "Auto Reply Sent"] = "Yes"
                         sent_count += 1
                 else:
-                    # For non-reply emails, send standard auto-reply once
                     self.send_auto_reply(
                         to_email=from_email if from_email else EMAIL_SENDER,
                         subject=subject

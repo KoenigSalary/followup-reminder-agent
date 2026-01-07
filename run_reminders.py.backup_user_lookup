@@ -8,7 +8,6 @@ import pandas as pd
 from datetime import datetime, timedelta
 from pathlib import Path
 from email_processor import EmailProcessor
-from user_lookup import find_user_email, find_user_info
 
 # Paths
 BASE_DIR = Path(__file__).resolve().parent
@@ -66,18 +65,41 @@ def should_send_reminder(task, today):
     
     return days_since_last >= interval
 
-def get_owner_email(owner, team_df=None):
-    """Find owner's email using UserLookup (supports users.xlsx)"""
-    return find_user_email(owner)
+def get_owner_email(owner, team_df):
+    """Find owner's email from team directory with flexible matching"""
+    if team_df is None or len(team_df) == 0:
+        return None
+    
+    owner_lower = owner.lower().strip()
+    
+    # Try 1: Exact match (case-insensitive)
+    match = team_df[team_df['Name'].str.lower() == owner_lower]
+    if len(match) > 0:
+        return match.iloc[0]['Email']
+    
+    # Try 2: Contains match (e.g., "Praveen" matches "Praveen Kumar")
+    match = team_df[team_df['Name'].str.lower().str.contains(owner_lower, na=False)]
+    if len(match) > 0:
+        return match.iloc[0]['Email']
+    
+    # Try 3: Reverse contains (e.g., "Praveen Kumar" task matches "Praveen" in directory)
+    for idx, row in team_df.iterrows():
+        team_name = str(row['Name']).lower().strip()
+        if owner_lower in team_name or team_name in owner_lower:
+            return row['Email']
+    
+    # Try 4: First name match (e.g., "Praveen" matches "Praveen Kumar")
+    owner_first = owner_lower.split()[0] if ' ' in owner_lower else owner_lower
+    for idx, row in team_df.iterrows():
+        team_first = str(row['Name']).lower().strip().split()[0] if ' ' in str(row['Name']) else str(row['Name']).lower().strip()
+        if owner_first == team_first:
+            return row['Email']
+    
+    return None
 
 def send_task_reminder(task, owner_email, email_processor):
-    """Send reminder email with full user context"""
-    from user_lookup import find_user_info
-    
+    """Send reminder email"""
     subject = f"⏰ Task Reminder: {task['task_text'][:50]}"
-    
-    # Get full user info
-    user_info = find_user_info(task['owner'])
     
     priority_emoji = {
         'urgent': '🔴', 'URGENT': '🔴',
@@ -87,12 +109,7 @@ def send_task_reminder(task, owner_email, email_processor):
     }
     emoji = priority_emoji.get(task['priority'], '🟡')
     
-    # Build email body with user context
-    owner_name = user_info['full_name'] if user_info else task['owner']
-    dept = user_info['department'] if user_info else 'N/A'
-    emp_id = user_info['employee_id'] if user_info else 'N/A'
-    
-    body = f"""Dear {owner_name},
+    body = f"""Dear {task['owner']},
 
 This is a reminder about your task:
 
@@ -100,8 +117,6 @@ This is a reminder about your task:
 {emoji} Priority: {task['priority'].upper()}
 📅 Deadline: {task['deadline']}
 🆔 Task ID: {task['task_id']}
-👤 Employee ID: {emp_id}
-🏢 Department: {dept}
 
 Please complete by the deadline.
 

@@ -6,14 +6,15 @@ def generate_mom_id():
     today = datetime.now().strftime("%Y%m%d")
     return f"MOM-{today}-001"
 
-# Update parse_bulk_mom function:
 def parse_bulk_mom(
     mom_subject: str,
     mom_text: str,
     default_owner: str,
-    default_deadline_days: int = None  # NEW PARAMETER
+    default_deadline_days: int | None = None,
+    cc: str | None = None
 ):
     mom_id = generate_mom_id()
+    meeting_id = mom_id  # ← FIX 1: Define meeting_id
     tasks = []
     created_date = datetime.now()
     
@@ -30,7 +31,7 @@ def parse_bulk_mom(
         for owner in owners:
             task_id = f"{mom_id}-T{str(task_counter).zfill(2)}"
             
-            # ✨ NEW: Determine priority
+            # ✨ Determine priority
             priority = determine_priority(
                 task_text=task_text,
                 deadline_days=default_deadline_days,
@@ -38,7 +39,7 @@ def parse_bulk_mom(
                 mom_subject=mom_subject
             )
             
-            # ✨ NEW: Calculate deadline
+            # ✨ Calculate deadline
             deadline = calculate_deadline(
                 created_date=created_date,
                 priority=priority,
@@ -47,15 +48,15 @@ def parse_bulk_mom(
             
             tasks.append({
                 "task_id": task_id,
-                "task_text": task_text,
+                "meeting_id": meeting_id,
                 "owner": owner,
+                "task_text": task_text,  # ← FIX 2: Use task_text instead of clean_task
+                "priority": priority,
+                "deadline": deadline,
                 "status": "OPEN",
-                "priority": priority,  # ✨ NEW
-                "deadline": deadline.strftime("%Y-%m-%d"),  # ✨ NEW
-                "meeting_id": mom_id,
-                "created_on": created_date.strftime("%Y-%m-%d %H:%M:%S"),
-                "last_reminder_date": ""
+                "cc": cc
             })
-            task_counter += 1
 
-    return tasks
+            task_counter += 1
+    
+    return tasks  # ← Make sure to return the tasks!

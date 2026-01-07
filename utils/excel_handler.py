@@ -15,8 +15,7 @@ class ExcelHandler:
             return pd.DataFrame()
 
         try:
-            df = pd.read_excel(self.excel_path)
-            return df
+            return pd.read_excel(self.excel_path)
         except Exception:
             return pd.DataFrame()
 
@@ -27,29 +26,36 @@ class ExcelHandler:
         df.to_excel(self.excel_path, index=False)
 
     # ---------------------------------------------
-    # Add new follow-up entry
+    # Generic append row (NEW)
+    # ---------------------------------------------
+    def append_row(self, row: dict):
+        df = self.load_data()
+        df = pd.concat([df, pd.DataFrame([row])], ignore_index=True)
+        self.save_data(df)
+
+    # ---------------------------------------------
+    # Add new follow-up entry (Manual)
     # ---------------------------------------------
     def add_entry(
         self,
         subject: str,
         owner: str,
         due_date,
-        remarks: str
+        remarks: str,
+        cc: str = ""
     ):
-        df = self.load_data()
-
         new_row = {
             "Subject": subject,
             "Owner": owner,
+            "CC": cc,
             "Due Date": due_date,
             "Remarks": remarks,
-            "Status": "Pending",
+            "Status": "OPEN",
             "Created On": datetime.now(),
             "Last Updated": datetime.now()
         }
 
-        df = pd.concat([df, pd.DataFrame([new_row])], ignore_index=True)
-        self.save_data(df)
+        self.append_row(new_row)
 
     # ---------------------------------------------
     # Update status
@@ -64,8 +70,10 @@ class ExcelHandler:
         df.at[index, "Last Updated"] = datetime.now()
         self.save_data(df)
 
+    # ---------------------------------------------
+    # Auto reply flag
+    # ---------------------------------------------
     def update_auto_reply_status(self, idx, value="Yes"):
         df = self.load_data()
         df.at[idx, "Auto Reply Sent"] = value
         self.save_data(df)
-

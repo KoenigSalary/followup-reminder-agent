@@ -8,23 +8,34 @@ from datetime import datetime
 from email_processor import EmailProcessor
 from shoddy_manager import get_employee_info
 
+
 class ManualTaskProcessor:
     def __init__(self):
+        """Initialize email processor"""
         self.email_proc = EmailProcessor()
     
-    def add_manual_task(self, owner, task_text, priority, deadline_date, excel_handler):
+    def add_manual_task(
+        self,
+        owner,
+        task_text,
+        priority,
+        deadline_date,
+        cc,
+        excel_handler
+    ):
         """
-        Add a new manual task and notify the owner via email
+        Add a manual task and send notification email
         
         Args:
-            owner: Owner first name (e.g., 'Sarika', 'Aditya')
+            owner: First name of task owner
             task_text: Task description
-            priority: Task priority (URGENT/HIGH/MEDIUM/LOW)
-            deadline_date: Deadline as datetime object
+            priority: Priority level (URGENT, HIGH, MEDIUM, LOW)
+            deadline_date: Deadline date
+            cc: CC recipients
             excel_handler: ExcelHandler instance
         
         Returns:
-            dict: Task creation result with task_id and status
+            dict with success, message, task_id, owner, owner_email
         """
         
         # Generate unique task ID
@@ -50,7 +61,9 @@ class ManualTaskProcessor:
             return {
                 'success': False,
                 'message': f"❌ Owner '{owner}' not found in Team Directory",
-                'task_id': None
+                'task_id': None,
+                'owner': owner,
+                'owner_email': 'N/A'
             }
         
         owner_email = emp_info['email']
@@ -58,29 +71,22 @@ class ManualTaskProcessor:
         owner_department = emp_info['department']
         employee_id = emp_info['employee_id']
         
-        # Create new task - USE EXACT COLUMN NAMES FROM YOUR EXCEL
+        # Create new task
         new_task = {
-            'task_id': task_id,
-            'meeting_id': 'MANUAL',
-            'owner': owner,  # First name only for consistency
-            'task_text': task_text,
-            'status': 'OPEN',
-            'created_on': today.strftime('%Y-%m-%d %H:%M:%S'),
-            'last_reminder_on': None,
-            'last_reminder': None,
-            'last_reminder_date': None,
-            'priority': priority,
-            'deadline': deadline_date.strftime('%Y-%m-%d'),
-            'completed_date': None,
-            'days_taken': None,
-            'performance_rating': None
+            "task_id": task_id,
+            "meeting_id": "MANUAL",
+            "owner": owner,
+            "task_text": task_text,
+            "priority": priority,
+            "deadline": deadline_date,
+            "cc": cc,
+            "status": "OPEN",
+            "created_on": datetime.now(),
+            "last_reminder_date": None
         }
         
-        # Append to dataframe
-        df = pd.concat([df, pd.DataFrame([new_task])], ignore_index=True)
-        
-        # Save to Excel
-        excel_handler.save_data(df)
+        # Append to Excel
+        excel_handler.append_row(new_task)
         
         # Send notification email to owner
         email_body = f"""Dear {owner_full_name},
@@ -104,9 +110,12 @@ Task Follow-up Team
 Koenig Solutions
 """
         
+        email_status = "Email not sent"
+        
         try:
+            # Use corrected parameter order: to_email, subject, body
             self.email_proc.send_email(
-                to_email=owner_email,  # ✅ Send to owner's email
+                to_email=owner_email,
                 subject=f"🆕 New Task Assigned: {task_text[:50]}...",
                 body=email_body
             )
@@ -116,11 +125,12 @@ Koenig Solutions
         except Exception as e:
             email_status = f"⚠️ Task created but email failed: {str(e)}"
         
+        # Return with all required fields
         return {
-            'success': True,
-            'message': f"✅ Task created successfully!\n{email_status}",
-            'task_id': task_id,
-            'owner': owner_full_name,
-            'owner_email': owner_email,
-            'employee_id': employee_id
+            "success": True,
+            "message": f"Task added successfully. {email_status}",
+            "task_id": task_id,
+            "owner": owner,
+            "employee_id": employee_id,
+            "owner_email": owner_email
         }

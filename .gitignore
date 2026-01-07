@@ -32,3 +32,27 @@ DEPLOYMENT_GUIDE.md
 *_backup.py
 *_old.py
 *.save
+
+# Backup files
+*.backup
+*.backup_*
+*.old
+*.old_*
+
+# Data files (contain sensitive info)
+data/*.xlsx
+data/*.xls
+!data/Team_Directory.xlsx.template
+
+# Log files
+logs/*.log
+*.log
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+
+# Environment
+.env
+venv/
