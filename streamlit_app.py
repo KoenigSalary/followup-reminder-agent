@@ -5,7 +5,7 @@ import os
 import pandas as pd
 import subprocess
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import streamlit as st
 from dotenv import load_dotenv
@@ -529,7 +529,14 @@ elif menu == "📥 View Follow-ups":
             st.dataframe(df.tail(5))
     
     # ✨ FILTER TASKS BY USER ROLE
-    df = user_manager.filter_tasks_by_user(df, st.session_state.user_info)
+    # 🎚️ FILTER TOGGLE
+    show_all = st.checkbox("📋 Show all tasks", value=True, help="Uncheck to see only tasks assigned to you/your department")
+    
+    if not show_all:
+        df = user_manager.filter_tasks_by_user(df, st.session_state.user_info)
+        st.info(f"🔍 Filtered to: {st.session_state.user_info.get('role')} - {st.session_state.user_info.get('department')}")
+    else:
+        st.info("📋 Showing all tasks")
 
     # 🔄 Normalize column names for compatibility
     column_mapping = {
@@ -677,66 +684,52 @@ elif menu == "⏰ Run Reminder Scheduler":
 elif menu == "📤 Send Task Reminders":
     st.subheader("📤 Send Task Reminders")
     
-    # Load tasks
     df = excel_handler.load_data()
-    team_df = pd.read_excel('data/Team_Directory.xlsx')
     
-    # Filter OPEN tasks
-    open_tasks = df[df['status'].str.upper() == 'OPEN']
-    
-    st.info(f"Found {len(open_tasks)} OPEN tasks")
-    
-    if len(open_tasks) > 0:
-        # Show tasks that will receive reminders
-        st.write("**Tasks to remind:**")
-        display_df = open_tasks[['task_id', 'owner', 'task_text', 'priority', 'deadline', 'last_reminder_date']]
-        st.dataframe(display_df)
-        
-        if st.button("📧 Send Reminders Now"):
-            email_proc = EmailProcessor()
-            sent_count = 0
-            
-            for idx, task in open_tasks.iterrows():
-                # Find owner email
-                owner_row = team_df[
-                    team_df['Name'].str.contains(task['owner'], case=False, na=False)
-                ]
-                
-                if len(owner_row) > 0:
-                    owner_email = owner_row.iloc[0]['Email']
-                    
-                    # Build email
-                    subject = f"⏰ Task Reminder: {task['task_text'][:50]}"
-                    body = f"""Dear {task['owner']},
-
-This is a reminder about your task:
-
-📋 Task: {task['task_text']}
-🔴 Priority: {task['priority'].upper()}
-📅 Deadline: {task['deadline']}
-🆔 Task ID: {task['task_id']}
-
-Please complete by the deadline.
-
-Best regards,
-Task Follow-up Team
-"""
-                    
-                    try:
-                        email_proc.send_email(owner_email, subject, body)
-                        # Update last reminder
-                        df.at[idx, 'last_reminder_date'] = datetime.now().date()
-                        df.at[idx, 'last_reminder_on'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-                        sent_count += 1
-                    except Exception as e:
-                        st.error(f"Failed to send to {task['owner']}: {e}")
-            
-            # Save updates
-            excel_handler.save_data(df)
-            st.success(f"✅ Sent {sent_count} reminder emails!")
-            st.balloons()
+    if df.empty:
+        st.info("No tasks available")
     else:
-        st.info("No OPEN tasks to remind")
+        # ✅ NEW: Handle both column name variants
+        status_col = 'status' if 'status' in df.columns else 'Status'
+        
+        # Filter OPEN tasks with safe column access
+        open_tasks = df[df[status_col].astype(str).str.upper() == 'OPEN']
+        
+        st.write(f"**📊 Found {len(open_tasks)} OPEN tasks**")
+        
+        if open_tasks.empty:
+            st.info("✅ No open tasks requiring reminders")
+        else:
+            # Show preview
+            st.write("**Tasks that will receive reminders:**")
+            
+            # Safe column access for display
+            display_cols = []
+            for col in ['task_id', 'owner', 'task_text', 'priority', 'deadline']:
+                if col in open_tasks.columns:
+                    display_cols.append(col)
+            
+            st.dataframe(open_tasks[display_cols])
+            
+            if st.button("📧 Send Reminders Now"):
+                with st.spinner("Sending reminders..."):
+                    try:
+                        # Use run_reminders.py logic
+                        import subprocess
+                        result = subprocess.run(
+                            ['python3', 'run_reminders.py'],
+                            capture_output=True,
+                            text=True
+                        )
+                        
+                        if result.returncode == 0:
+                            st.success("✅ Reminders sent successfully!")
+                            st.text(result.stdout)
+                        else:
+                            st.error("❌ Error sending reminders")
+                            st.text(result.stderr)
+                    except Exception as e:
+                        st.error(f"Error: {str(e)}")
 
 # =========================================================
 # 4. MANUAL ENTRY
@@ -969,104 +962,37 @@ elif menu == "📄 Bulk MOM Upload":
         # Save button
         col1, col2, col3 = st.columns([1, 1, 1])
         with col2:
-            if st.button("💾 Save All Tasks", type="primary", use_container_width=True):
-                try:
-                    from datetime import datetime, timedelta
-                                        
-                    task_file = "data/tasks_registry.xlsx"
-                    
-                    # Load existing tasks
-                    if Path(task_file).exists():
-                        df_existing = pd.read_excel(task_file)
-                    else:
-                        df_existing = pd.DataFrame()
-                    
-                    # Get CC from session state
-                    final_cc = st.session_state.get('mom_cc', '')
-                    
-                    # Update tasks with individual deadlines
-                    new_rows = []
-                    for i, task in enumerate(tasks):
-                        # Get the individual deadline for this task
-                        deadline_days = st.session_state['task_deadlines'].get(i, 7)
-                        deadline_date = (datetime.now() + timedelta(days=deadline_days)).strftime("%Y-%m-%d")
-                        
-                        new_row = {
-                            "task_id": task["task_id"],
-                            "meeting_id": task["meeting_id"],
-                            "owner": task["owner"],
-                            "task_text": task["task_text"],
-                            "status": task["status"],
-                            "created_on": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                            "last_reminder_on": task.get("last_reminder"),
-                            "last_reminder": None,
-                            "last_reminder_date": None,
-                            "priority": task.get("priority", "MEDIUM"),
-                            "deadline": deadline_date,
-                            "completed_date": None,
-                            "days_taken": None,
-                            "performance_rating": None,
-                            "cc": final_cc  # Add CC to each task
-                        }
-                        new_rows.append(new_row)
-                    
-                    # Combine and save
-                    new_df = pd.DataFrame(new_rows)
-                    
-                    # Ensure CC column exists in existing data
-                    if not df_existing.empty and 'cc' not in df_existing.columns:
-                        df_existing['cc'] = ''
-                    
-                    combined = pd.concat([df_existing, new_df], ignore_index=True)
-                    combined.to_excel(task_file, index=False)
-                    
-                    st.success(f"✅ {len(tasks)} task(s) saved with individual deadlines!")
-                    
-                    # Show summary
-                    st.markdown("### 📊 Summary")
-                    
-                    # Show CC info
-                    if final_cc:
-                        st.markdown(f"**📧 CC:** {final_cc}")
-                    
-                    # By Owner
-                    st.markdown("**By Owner:**")
-                    owner_counts = new_df["owner"].value_counts()
-                    for owner, count in owner_counts.items():
-                        st.write(f"- **{owner}**: {count} task(s)")
-                    
-                    # By Priority
-                    st.markdown("**By Priority:**")
-                    priority_counts = new_df["priority"].value_counts()
-                    for priority, count in priority_counts.items():
-                        from priority_manager import get_priority_emoji
-                        emoji = get_priority_emoji(priority)
-                        st.write(f"- {emoji} **{priority}**: {count} task(s)")
-                    
-                    st.balloons()
-                    
-                    # Clear session state
-                    del st.session_state['parsed_tasks']
-                    del st.session_state['task_deadlines']
-                    if 'mom_subject' in st.session_state:
-                        del st.session_state['mom_subject']
-                    if 'mom_cc' in st.session_state:
-                        del st.session_state['mom_cc']
-                    
-                    st.info("👆 You can now add more tasks or navigate to other sections.")
-                    
-                except Exception as e:
-                    st.error(f"❌ Error saving: {str(e)}")
-                    import traceback
-                    st.code(traceback.format_exc())
-                
-# =========================================================
-# 6. SHODDY CHECK
-# =========================================================
-elif menu == "⚠️ Shoddy Check":
-    st.subheader("⚠️ Overdue Tasks & Shoddy Management")
+            if st.button("💾 Save All Tasks"):
+                # Build new_rows list
+                new_rows = []
+                for i, task in enumerate(st.session_state.parsed_tasks):
+                    deadline_days = st.session_state.task_deadlines[i]
+                    deadline = (datetime.now() + timedelta(days=deadline_days)).strftime('%Y-%m-%d')
+        
+                    new_rows.append({
+                        'task_id': task['task_id'],
+                        'meeting_id': task['meeting_id'],
+                        'owner': task['owner'],
+                        'task_text': task['task_text'],
+                        'status': 'OPEN',
+                        'created_on': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                        'last_reminder_on': None,
+                        'last_reminder': None,
+                        'last_reminder_date': None,
+                        'priority': task['priority'],
+                        'deadline': deadline,
+                        'completed_date': None,
+                        'days_taken': None,
+                        'performance_rating': None,
+                        'cc': task.get('cc', '')
+                    })
     
-    st.info("Check for overdue tasks and send shoddy notifications to HR")
+                # ✅ CORRECT: Use append_rows to add without overwriting
+                total = excel_handler.append_rows(new_rows)
+    
+                st.success(f"✅ Saved {len(new_rows)} tasks! Total in registry: {total}")
+    
+                # Clear session
     
     col1, col2 = st.columns(2)
     

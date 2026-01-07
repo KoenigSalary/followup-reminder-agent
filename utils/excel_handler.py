@@ -20,18 +20,39 @@ class ExcelHandler:
             return pd.DataFrame()
 
     # ---------------------------------------------
-    # Save full dataframe
+    # Save full dataframe (OVERWRITES)
     # ---------------------------------------------
     def save_data(self, df: pd.DataFrame):
+        """Save a complete dataframe (overwrites file)"""
+        if not isinstance(df, pd.DataFrame):
+            df = pd.DataFrame(df)  # Convert list of dicts to DataFrame
         df.to_excel(self.excel_path, index=False)
 
     # ---------------------------------------------
-    # Generic append row (NEW)
+    # Append rows (RECOMMENDED for Bulk MOM)
+    # ---------------------------------------------
+    def append_rows(self, rows: list):
+        """Append multiple rows to existing data"""
+        existing_df = self.load_data()
+        new_df = pd.DataFrame(rows)
+        
+        # Combine existing + new
+        if existing_df.empty:
+            combined = new_df
+        else:
+            combined = pd.concat([existing_df, new_df], ignore_index=True)
+        
+        # Save
+        combined.to_excel(self.excel_path, index=False)
+        print(f"✅ Appended {len(rows)} rows. Total: {len(combined)}")
+        return len(combined)
+
+    # ---------------------------------------------
+    # Generic append row (Single row)
     # ---------------------------------------------
     def append_row(self, row: dict):
-        df = self.load_data()
-        df = pd.concat([df, pd.DataFrame([row])], ignore_index=True)
-        self.save_data(df)
+        """Append a single row"""
+        return self.append_rows([row])
 
     # ---------------------------------------------
     # Add new follow-up entry (Manual)
