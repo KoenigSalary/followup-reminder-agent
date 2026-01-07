@@ -981,8 +981,8 @@ elif menu == "📄 Bulk MOM Upload":
         with col2:
             if st.button("💾 Save All Tasks"):
                 # Build new_rows list in the CORRECT format for ExcelHandler
-               new_rows = []
-              for i, task in enumerate(st.session_state.parsed_tasks):
+                new_rows = []
+                for i, task in enumerate(st.session_state.parsed_tasks):
                     deadline_days = st.session_state.task_deadlines[i]
                     deadline = (datetime.now() + timedelta(days=deadline_days))
             
