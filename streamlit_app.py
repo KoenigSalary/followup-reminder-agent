@@ -1020,7 +1020,7 @@ elif menu == "📄 Bulk MOM Upload":
                             deadline_days = st.session_state.task_deadlines[i]
                             deadline = (datetime.now() + timedelta(days=deadline_days))
                     
-                           formatted_rows.append({
+                            formatted_rows.append({
                                 "Subject": task['task_text'],
                                 "Owner": task['owner'],
                                 "CC": task.get('cc', st.session_state.get('mom_cc', '')),
@@ -1029,7 +1029,7 @@ elif menu == "📄 Bulk MOM Upload":
                                 "Status": "OPEN",
                                 "Created On": datetime.now(),
                                 "Last Updated": datetime.now()
-                           })
+                            })
                 
                         new_df = pd.DataFrame(formatted_rows)
                         combined_df = pd.concat([existing_df, new_df], ignore_index=True)
