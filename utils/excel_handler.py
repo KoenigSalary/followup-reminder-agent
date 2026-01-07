@@ -64,3 +64,4 @@ class ExcelHandler:
         df = self.load_data()
         df.at[idx, "Auto Reply Sent"] = value
         self.save_data(df)
+
