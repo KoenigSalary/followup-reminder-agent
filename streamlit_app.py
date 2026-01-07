@@ -143,7 +143,7 @@ st.set_page_config(
 # =========================================================
 with st.sidebar:
     if LOGO_PATH.exists():
-        st.image(str(LOGO_PATH), width=220)
+        st.image(str(LOGO_PATH), width=150)
     st.markdown("### Follow-up & Reminder Agent")
     st.markdown("---")
     
@@ -215,10 +215,14 @@ excel_handler, email_processor, reminder_scheduler, manual_processor = initializ
 st.sidebar.header("Navigation")
 
 # Build menu based on permissions
-menu_options = ["📥 View Follow-ups"]
+menu_options = [
+    "📊 Dashboard Analytics",  # ✨ NEW: Always visible
+    "📥 View Follow-ups",
+    "🔍 DEBUG Tasks"           # ✨ NEW: Debug mode
+]
 
 if st.session_state.permissions.get('send_reminders'):
-    menu_options.extend(["📧 Process Emails", "⏰ Run Reminder Scheduler"])
+    menu_options.extend(["📧 Process Emails", "⏰ Run Reminder Scheduler", "📤 Send Task Reminders"])
 
 if st.session_state.permissions.get('create_tasks'):
     menu_options.extend(["✍️ Manual Entry", "📄 Bulk MOM Upload"])
@@ -230,7 +234,6 @@ if st.session_state.permissions.get('manage_users'):
     menu_options.append("👥 User Management")
 
 menu_options.extend(["🔑 Change Password", "📊 Logs / Status"])
-
 menu = st.sidebar.radio("Select Action", menu_options)
 
 # =========================================================
@@ -251,43 +254,65 @@ if menu == "📊 Dashboard Analytics":
         'priority': 'Priority',
         'created_on': 'Created On'
     }
-    df = df.rename(columns={k: v for k, v in column_mapping.items() if k in df.columns})
+    
+    for old_col, new_col in column_mapping.items():
+        if old_col in df.columns and new_col not in df.columns:
+            df = df.rename(columns={old_col: new_col})
     
     if df.empty:
-        st.info("No tasks available for analysis")
+        st.info("📭 No tasks available for analysis.")
     else:
-        # Key Metrics Row
-        col1, col2, col3, col4 = st.columns(4)
+        # ✅ FIXED: Proper status filtering
+        status_col = 'Status' if 'Status' in df.columns else 'status'
         
+        # Calculate metrics
         total_tasks = len(df)
-        open_tasks = len(df[df.get('Status', df.get('status', '')).str.upper() == 'OPEN'])
-        completed_tasks = len(df[df.get('Status', df.get('status', '')).str.upper().isin(['COMPLETED', 'CLOSED'])])
         
-        # Calculate overdue
+        # OPEN tasks
+        open_tasks = len(df[df[status_col].astype(str).str.upper() == 'OPEN'])
+        
+        # COMPLETED tasks
+        completed_tasks = len(df[df[status_col].astype(str).str.upper().isin(['COMPLETED', 'CLOSED'])])
+        
+        # OVERDUE tasks
         today = datetime.now().date()
         overdue_count = 0
+        
+        deadline_col = 'Due Date' if 'Due Date' in df.columns else 'deadline'
+        
         for idx, row in df.iterrows():
-            if row.get('Status', row.get('status', '')).upper() == 'OPEN':
-                deadline = row.get('Due Date', row.get('deadline'))
-                if pd.notna(deadline):
+            if row[status_col] and str(row[status_col]).upper() == 'OPEN':
+                deadline = row.get(deadline_col)
+                if deadline:
+                    # Handle both string and datetime
                     if isinstance(deadline, str):
-                        deadline = pd.to_datetime(deadline).date()
+                        try:
+                            deadline = datetime.strptime(deadline, '%Y-%m-%d').date()
+                        except:
+                            continue
                     elif hasattr(deadline, 'date'):
                         deadline = deadline.date()
+                    
                     if deadline < today:
                         overdue_count += 1
         
+        # Display metrics
+        col1, col2, col3, col4 = st.columns(4)
+        
         with col1:
-            st.metric("📋 Total Tasks", total_tasks)
+            st.metric("📊 Total Tasks", total_tasks)
+        
         with col2:
-            st.metric("✅ Open Tasks", open_tasks)
+            st.metric("📂 Open Tasks", open_tasks)
+        
         with col3:
-            st.metric("🎉 Completed", completed_tasks)
+            st.metric("✅ Completed", completed_tasks)
+        
         with col4:
-            st.metric("⚠️ Overdue", overdue_count, delta=None if overdue_count == 0 else f"-{overdue_count}")
+            st.metric("🚨 Overdue", overdue_count, delta=None if overdue_count == 0 else "!")
         
-        st.divider()
-        
+        st.markdown("---")
+                      
         # Charts Row 1
         col1, col2 = st.columns(2)
         
@@ -458,6 +483,34 @@ if menu == "📊 Dashboard Analytics":
                     st.dataframe(overdue_df, use_container_width=True)
 
 # =========================================================
+# 🔍 DEBUG TASKS
+# =========================================================
+elif menu == "🔍 DEBUG Tasks":
+    st.title("🔍 Debug: All Tasks")
+    
+    df = excel_handler.load_data()
+    
+    st.write(f"**📊 Total tasks:** {len(df)}")
+    st.write(f"**📋 Columns:** {list(df.columns)}")
+    
+    if len(df) > 0:
+        st.write("**📈 Status distribution:**")
+        if 'status' in df.columns:
+            st.write(df['status'].value_counts())
+        else:
+            st.warning("⚠️ No 'status' column found!")
+        
+        st.write("**📋 Last 20 tasks:**")
+        display_cols = ['task_id', 'owner', 'task_text', 'status', 'priority', 'deadline']
+        available_cols = [col for col in display_cols if col in df.columns]
+        st.dataframe(df[available_cols].tail(20))
+        
+        st.write("**🔍 Raw last row:**")
+        st.json(df.iloc[-1].to_dict())
+    else:
+        st.info("No tasks in registry")
+
+# =========================================================
 # 1. VIEW FOLLOW-UPS
 # =========================================================
 elif menu == "📥 View Follow-ups":
@@ -465,9 +518,41 @@ elif menu == "📥 View Follow-ups":
 
     df = excel_handler.load_data()
     
+    # 🐛 DEBUG SECTION
+    with st.expander("🔍 Debug: Raw Data"):
+        st.write(f"**Total rows:** {len(df)}")
+        st.write(f"**Columns:** {list(df.columns)}")
+        if len(df) > 0:
+            st.write("**Status values:**")
+            st.write(df['status'].value_counts() if 'status' in df.columns else "No 'status' column")
+            st.write("**Last 5 tasks:**")
+            st.dataframe(df.tail(5))
+    
     # ✨ FILTER TASKS BY USER ROLE
     df = user_manager.filter_tasks_by_user(df, st.session_state.user_info)
 
+    # 🔄 Normalize column names for compatibility
+    column_mapping = {
+        'task_text': 'Subject',
+        'deadline': 'Due Date',
+        'last_reminder_date': 'Last Reminder Date',
+        'owner': 'Owner',
+        'status': 'Status',
+        'priority': 'Priority'
+    }
+    
+    # Rename columns if they exist
+    for old_col, new_col in column_mapping.items():
+        if old_col in df.columns and new_col not in df.columns:
+            df = df.rename(columns={old_col: new_col})
+    
+    # Add Remarks column if missing
+    if 'Remarks' not in df.columns:
+        df['Remarks'] = ''
+    
+    # 🔍 DEBUG: Show what we have
+    st.write(f"**Total tasks loaded:** {len(df)}")
+    
     if df.empty:
         st.info("No follow-ups available.")
     else:
