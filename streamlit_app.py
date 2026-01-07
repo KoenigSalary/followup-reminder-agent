@@ -736,54 +736,70 @@ elif menu == "📤 Send Task Reminders":
 # =========================================================
 elif menu == "✍️ Manual Entry":
     st.subheader("Add Manual Follow-up")
-
+    
     with st.form("manual_entry_form"):
         owner = st.text_input(
             "Owner (First Name)",
             placeholder="e.g., Sarika, Aditya, Praveen"
         )
-
+        
         task_text = st.text_area(
             "Task Description",
             placeholder="e.g., Review Q4 financial statements"
         )
-
+        
         cc = st.text_input(
             "CC (comma separated emails or names)",
             placeholder="sarika.gupta@..., Anurag, hr@koenig-solutions.com"
         )
-
+        
         priority = st.selectbox(
             "Priority",
             ["URGENT", "HIGH", "MEDIUM", "LOW"],
             index=2
         )
-
+        
         deadline_date = st.date_input("Deadline")
-
+        
         submitted = st.form_submit_button("Save")
-
+        
         if submitted:
             if owner and task_text:
-                result = manual_processor.add_manual_task(
-                    owner=owner,
-                    task_text=task_text,
-                    priority=priority,
-                    deadline_date=deadline_date,
-                    cc=cc,
-                    excel_handler=excel_handler
-                )
-
-                if result["success"]:
-                    st.success(result["message"])
-                    st.info(f"📋 Task ID: {result['task_id']}")
-                    st.info(f"👤 Assigned to: {result['owner']}")
-                    st.info(f"📧 Email sent to: {result['owner_email']}")
-                else:
-                    st.error(result["message"])
+                try:
+                    # ✅ DIRECTLY use ExcelHandler's add_entry method
+                    total = excel_handler.add_entry(
+                        subject=task_text,
+                        owner=owner,
+                        due_date=deadline_date,
+                        remarks=f"Priority: {priority}",
+                        cc=cc
+                    )
+                    
+                    st.success(f"✅ Task added successfully! Total tasks: {total}")
+                    st.info(f"👤 Assigned to: {owner}")
+                    st.info(f"📅 Deadline: {deadline_date}")
+                    st.info(f"🎯 Priority: {priority}")
+                    
+                except Exception as e:
+                    st.error(f"❌ Error adding task: {str(e)}")
+                    # Fallback
+                    try:
+                        total = excel_handler.append_rows([{
+                            "Subject": task_text,
+                            "Owner": owner,
+                            "CC": cc,
+                            "Due Date": deadline_date,
+                            "Remarks": f"Priority: {priority}",
+                            "Status": "OPEN",
+                            "Created On": datetime.now(),
+                            "Last Updated": datetime.now()
+                        }])
+                        st.success(f"✅ Task added via fallback! Total: {total}")
+                    except Exception as e2:
+                        st.error(f"❌ Fallback also failed: {str(e2)}")
             else:
                 st.warning("⚠️ Please fill in Owner and Task Description")
-
+                
 # =========================================================
 # 5. BULK MOM UPLOAD 
 # =========================================================
@@ -959,46 +975,83 @@ elif menu == "📄 Bulk MOM Upload":
                 st.session_state['mom_cc'] = updated_cc
                 st.success("CC updated!")
         
+        
         # Save button
         col1, col2, col3 = st.columns([1, 1, 1])
         with col2:
             if st.button("💾 Save All Tasks"):
-                # Build new_rows list
-                new_rows = []
-                for i, task in enumerate(st.session_state.parsed_tasks):
+                # Build new_rows list in the CORRECT format for ExcelHandler
+               new_rows = []
+              for i, task in enumerate(st.session_state.parsed_tasks):
                     deadline_days = st.session_state.task_deadlines[i]
-                    deadline = (datetime.now() + timedelta(days=deadline_days)).strftime('%Y-%m-%d')
-        
+                    deadline = (datetime.now() + timedelta(days=deadline_days))
+            
+                    # Use the SAME format as ExcelHandler.add_entry() expects
                     new_rows.append({
-                        'task_id': task['task_id'],
-                        'meeting_id': task['meeting_id'],
-                        'owner': task['owner'],
-                        'task_text': task['task_text'],
-                        'status': 'OPEN',
-                        'created_on': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-                        'last_reminder_on': None,
-                        'last_reminder': None,
-                        'last_reminder_date': None,
-                        'priority': task['priority'],
-                        'deadline': deadline,
-                        'completed_date': None,
-                        'days_taken': None,
-                        'performance_rating': None,
-                        'cc': task.get('cc', '')
+                        "Subject": task['task_text'],  # Map task_text to Subject
+                        "Owner": task['owner'],
+                        "CC": task.get('cc', st.session_state.get('mom_cc', '')),
+                        "Due Date": deadline,
+                        "Remarks": f"MOM: {st.session_state.get('mom_subject', '')} | Task ID: {task['task_id']}",
+                        "Status": "OPEN",
+                        "Created On": datetime.now(),
+                        "Last Updated": datetime.now()
                     })
-    
-                # ✅ CORRECT: Use append_rows to add without overwriting
-                total = excel_handler.append_rows(new_rows)
-    
-                st.success(f"✅ Saved {len(new_rows)} tasks! Total in registry: {total}")
-    
-                # Clear session
-                st.session_state.parsed_tasks = []
-                st.session_state.task_deadlines = []
-                st.session_state.mom_subject = ""
-                st.session_state.mom_cc = ""
-                st.rerun()
+        
+                try:
+                    # ✅ FIXED: Now using the correct column format
+                    if new_rows:
+                        total = excel_handler.append_rows(new_rows)
+                        st.success(f"✅ Saved {len(new_rows)} tasks! Total in registry: {total}")
+                    else:
+                        st.error("No valid tasks to save")
+                
+                except Exception as e:
+                    st.error(f"❌ Error saving tasks: {str(e)}")
+                    st.info("Trying alternative save method...")
+            
+                    # Fallback: Save directly to Excel
+                    try:
+                        existing_df = pd.read_excel(EXCEL_FILE_PATH) if os.path.exists(EXCEL_FILE_PATH) else pd.DataFrame()
+                
+                        # Build DataFrame in the correct format
+                        formatted_rows = []
+                        for task in st.session_state.parsed_tasks:
+                            deadline_days = st.session_state.task_deadlines[i]
+                            deadline = (datetime.now() + timedelta(days=deadline_days))
+                    
+                           formatted_rows.append({
+                                "Subject": task['task_text'],
+                                "Owner": task['owner'],
+                                "CC": task.get('cc', st.session_state.get('mom_cc', '')),
+                                "Due Date": deadline,
+                                "Remarks": f"MOM: {st.session_state.get('mom_subject', '')}",
+                                "Status": "OPEN",
+                                "Created On": datetime.now(),
+                                "Last Updated": datetime.now()
+                           })
+                
+                        new_df = pd.DataFrame(formatted_rows)
+                        combined_df = pd.concat([existing_df, new_df], ignore_index=True)
+                        combined_df.to_excel(EXCEL_FILE_PATH, index=False)
+                        total = len(combined_df)
+                        st.success(f"✅ Saved {len(formatted_rows)} tasks via fallback! Total: {total}")
+                
+                    except Exception as e2:
+                        st.error(f"❌ Fallback also failed: {str(e2)}")
+                        total = 0
 
+                # Clear session state regardless
+                if 'parsed_tasks' in st.session_state:
+                    del st.session_state.parsed_tasks
+                if 'task_deadlines' in st.session_state:
+                    del st.session_state.task_deadlines
+                if 'mom_subject' in st.session_state:
+                    del st.session_state.mom_subject
+                if 'mom_cc' in st.session_state:
+                    del st.session_state.mom_cc
+        
+                st.rerun()
 # =========================================================
 # ⚠️ SHODDY CHECK
 # =========================================================
