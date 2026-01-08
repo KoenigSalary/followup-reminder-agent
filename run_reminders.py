@@ -129,7 +129,9 @@ def main():
     print(f"📊 Total tasks: {len(tasks_df)}")
     
     # Filter OPEN tasks
-    open_tasks = tasks_df[tasks_df['status'].str.upper() == 'OPEN']
+    # Handle both 'status' and 'Status' column names
+    status_col = 'status' if 'status' in tasks_df.columns else 'Status'
+    open_tasks = tasks_df[tasks_df[status_col].str.upper() == 'OPEN']
     print(f"📋 OPEN tasks: {len(open_tasks)}")
     
     if len(open_tasks) == 0:
