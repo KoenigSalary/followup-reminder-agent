@@ -602,6 +602,9 @@ elif menu == "📥 View Follow-ups":
             remarks = row.get("Remarks", "")
             if isinstance(remarks, pd.Series):
                 remarks = remarks.iloc[0] if not remarks.empty else ""
+            # Don't show "None" - show empty string instead
+            if pd.isna(remarks) or str(remarks).lower() == 'none':
+                remarks = ""
             
             priority = row.get("Priority", "MEDIUM")
             if isinstance(priority, pd.Series):
@@ -988,14 +991,21 @@ elif menu == "📄 Bulk MOM Upload":
             
                     # Use the SAME format as ExcelHandler.add_entry() expects
                     new_rows.append({
-                        "Subject": task['task_text'],  # Map task_text to Subject
-                        "Owner": task['owner'],
-                        "CC": task.get('cc', st.session_state.get('mom_cc', '')),
-                        "Due Date": deadline,
-                        "Remarks": f"MOM: {st.session_state.get('mom_subject', '')} | Task ID: {task['task_id']}",
-                        "Status": "OPEN",
-                        "Created On": datetime.now(),
-                        "Last Updated": datetime.now()
+                        "task_id": task['task_id'],
+                        "meeting_id": task.get('meeting_id', ''),
+                        "owner": task['owner'],
+                        "task_text": task['task_text'],
+                        "status": "OPEN",
+                        "created_on": datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                        "last_reminder_on": None,
+                        "last_reminder": None,
+                        "last_reminder_date": None,
+                        "priority": task.get('priority', 'MEDIUM'),
+                        "deadline": deadline.strftime('%Y-%m-%d'),
+                        "completed_date": None,
+                        "days_taken": None,
+                        "performance_rating": None,
+                        "cc": task.get('cc', st.session_state.get('mom_cc', ''))
                     })
         
                 try:
