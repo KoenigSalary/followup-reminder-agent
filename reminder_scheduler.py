@@ -1,118 +1,130 @@
-from datetime import timedelta
-from datetime import datetime
-from email_processor import EmailProcessor
-from utils.excel_handler import ExcelHandler
-from datetime import date, timedelta
 import pandas as pd
-
-def should_send_based_on_priority(priority: str, due_date, today, last_reminder_date=None):
-    priority = str(priority).strip().lower()
-
-    # Never remind before due date
-    if today < due_date:
-        return False
-
-    # If never reminded before → send immediately
-    if not last_reminder_date:
-        return True
-
-    days_since_last = (today - last_reminder_date).days
-
-    if priority == "high":
-        return days_since_last >= 2     # alternate day
-
-    if priority == "medium":
-        return days_since_last >= 3     # every 3 days
-
-    if priority == "low":
-        return days_since_last >= 7     # weekly
-
-    return False
+from datetime import datetime, date, timedelta
 
 def get_next_reminder_date(priority, last_reminder_date, due_date):
-    """
-    Returns the next reminder date based on priority.
-    Handles empty / NaN dates safely.
-    """
-
+    """Calculate next reminder date based on priority and last reminder"""
+    
     # Normalize priority
-    priority = str(priority).strip().lower()
-
-    # Normalize dates
-    if pd.isna(last_reminder_date):
-        last_reminder_date = None
-
-    if pd.isna(due_date):
+    priority = str(priority).upper() if priority else "MEDIUM"
+    
+    # Convert last_reminder_date to date object
+    if last_reminder_date:
+        if isinstance(last_reminder_date, str):
+            try:
+                last_reminder_date = pd.to_datetime(last_reminder_date).date()
+            except:
+                last_reminder_date = None
+        elif hasattr(last_reminder_date, 'date'):
+            last_reminder_date = last_reminder_date.date()
+        elif isinstance(last_reminder_date, date):
+            pass  # Already a date
+        else:
+            last_reminder_date = None
+    
+    # Convert due_date to date object
+    if due_date:
+        if isinstance(due_date, str):
+            try:
+                due_date = pd.to_datetime(due_date).date()
+            except:
+                due_date = None
+        elif hasattr(due_date, 'date'):
+            due_date = due_date.date()
+        elif isinstance(due_date, date):
+            pass  # Already a date
+        else:
+            due_date = None
+    
+    # If no due date, can't calculate
+    if not due_date:
         return None
-
-    # Convert to date objects
-    if hasattr(due_date, "date"):
-        due_date = due_date.date()
-
-    if last_reminder_date and hasattr(last_reminder_date, "date"):
-        last_reminder_date = last_reminder_date.date()
-
-    # Decide base date
-    base_date = last_reminder_date or due_date
-
-    # Cadence
-    if priority == "high":
+    
+    # Use last reminder as base, or due date if no reminder yet
+    base_date = last_reminder_date if last_reminder_date else due_date
+    
+    # Final check: ensure base_date is a date object
+    if not isinstance(base_date, date):
+        return None
+    
+    # Priority-based intervals
+    if priority == "URGENT":
+        delta = 1
+    elif priority == "HIGH":
         delta = 2
-    elif priority == "medium":
+    elif priority == "MEDIUM":
         delta = 3
-    elif priority == "low":
+    elif priority == "LOW":
         delta = 7
     else:
-        delta = 3  # safe default
-
+        delta = 3
+    
+    # Return next reminder date
     return base_date + timedelta(days=delta)
 
+
 class ReminderScheduler:
-    def __init__(self, excel_path: str):
+    def __init__(self, excel_path):
+        from utils.excel_handler import ExcelHandler
+        from email_processor import EmailProcessor
+        
         self.excel_handler = ExcelHandler(excel_path)
         self.email_processor = EmailProcessor()
 
-    def run(self) -> int:
+    def run(self):
+        """Check and send reminders for pending tasks"""
+        
         df = self.excel_handler.load_data()
+        
         if df.empty:
+            print("No tasks to process")
             return 0
-
-        today = datetime.now().date()
+        
         sent_count = 0
-
-        for _, row in df.iterrows():
-            status = str(row.get("Status", "")).strip().lower()
-            if status != "pending":
+        today = datetime.now().date()
+        
+        for idx, row in df.iterrows():
+            status = str(row.get('Status', row.get('status', ''))).strip().lower()
+            
+            if status != 'pending':
                 continue
-
-            due_date = row.get("Due Date")
-            if not due_date:
+            
+            due_date = row.get('Due Date', row.get('deadline'))
+            if pd.isna(due_date):
                 continue
-
-            # Normalize Excel / pandas date
-            if hasattr(due_date, "date"):
+            
+            # Convert to date
+            if isinstance(due_date, str):
+                due_date = pd.to_datetime(due_date).date()
+            elif hasattr(due_date, 'date'):
                 due_date = due_date.date()
-
-            priority = row.get("Priority", "Medium")
-
-            if due_date <= today and should_send_based_on_priority(priority, due_date, today):
-                subject = f"[{priority.upper()}] Follow-up Due: {row.get('Subject')}"
+            
+            priority = row.get('Priority', row.get('priority', 'Medium'))
+            last_reminder = row.get('Last Reminder Date', row.get('last_reminder_date'))
+            
+            # Check if should send
+            if due_date <= today and should_send_based_on_priority(
+                priority, due_date, today, last_reminder
+            ):
+                # Build and send email
+                subject = f"[{priority}] Follow-up Due: {row.get('Subject', row.get('task_text', 'Task'))}"
+                
                 body = f"""
-Hello,
-
-This is a reminder for the Pending Task:
-
-Subject  : {row.get('Subject')}
-Owner    : {row.get('Owner')}
-Priority : {priority}
-Due Date : {due_date}
-Remarks  : {row.get('Remarks')}
-
-Regards,
-Task Followup Team
-"""
-                self.email_processor.send_email(subject, body)
+                Subject: {row.get('Subject', row.get('task_text', 'N/A'))}
+                Owner: {row.get('Owner', row.get('owner', 'N/A'))}
+                Priority: {priority}
+                Due Date: {due_date}
+                Remarks: {row.get('Remarks', '')}
+                """
+                
+                owner_email = row.get('owner_email', row.get('Owner Email', 'default@example.com'))
+                
+                # Send email
+                self.email_processor.send_email(
+                    to_email=owner_email,
+                    subject=subject,
+                    body=body
+                )
+                
                 sent_count += 1
-
+        
         return sent_count
-

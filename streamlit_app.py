@@ -629,7 +629,7 @@ elif menu == "📥 View Follow-ups":
                 )
 
             with col2:
-                if str(status_val).upper() not in ["COMPLETED", "CLOSED"]:
+                if str(status_val).upper() not in ["COMPLETED", "CLOSED", "CLOSED"]:
                     if st.button("✅ Mark Completed", key=f"complete_{idx}"):
                         excel_handler.update_status(idx, "COMPLETED")
                         st.success("Marked as completed.")
