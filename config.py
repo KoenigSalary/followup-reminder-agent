@@ -16,8 +16,13 @@ BASE_DIR = Path(__file__).resolve().parent
 # Data / Excel Configuration
 # -------------------------------------------------
 DATA_DIR = BASE_DIR / "data"
-EXCEL_FILE_PATH = DATA_DIR / "auto_reply_sent.xlsx"
+
+# ✅ FIXED: Use tasks_registry.xlsx as the main file
+EXCEL_FILE_PATH = DATA_DIR / "tasks_registry.xlsx"
 TASK_FILE = DATA_DIR / "tasks_registry.xlsx"
+
+# For email reply tracking (separate file)
+EMAIL_REPLY_FILE = DATA_DIR / "auto_reply_sent.xlsx"
 
 # -------------------------------------------------
 # Email Configuration (STANDARDIZED)
@@ -43,20 +48,7 @@ SENDER_NAME = "Praveen Chaudhary"
 def validate_paths():
     DATA_DIR.mkdir(parents=True, exist_ok=True)
 
-    if not EXCEL_FILE_PATH.exists():
-        df = pd.DataFrame(
-            columns=[
-                "Subject",
-                "Owner",
-                "Due Date",
-                "Remarks",
-                "Status",
-                "Created On",
-                "Last Updated"
-            ]
-        )
-        df.to_excel(EXCEL_FILE_PATH, index=False)
-
+    # Create tasks_registry.xlsx if missing
     if not TASK_FILE.exists():
         task_df = pd.DataFrame(
             columns=[
@@ -66,7 +58,28 @@ def validate_paths():
                 "task_text",
                 "status",
                 "created_on",
-                "last_reminder_on"
+                "last_reminder_on",
+                "last_reminder",
+                "last_reminder_date",
+                "priority",
+                "deadline",
+                "completed_date",
+                "days_taken",
+                "performance_rating",
+                "cc"
             ]
         )
         task_df.to_excel(TASK_FILE, index=False)
+    
+    # Create email reply tracking file if missing
+    if not EMAIL_REPLY_FILE.exists():
+        email_df = pd.DataFrame(
+            columns=[
+                "Auto Reply Sent",
+                "Meaning",
+                "Action",
+                "Message ID",
+                "Received Date"
+            ]
+        )
+        email_df.to_excel(EMAIL_REPLY_FILE, index=False)
