@@ -117,14 +117,21 @@ class ExcelHandler:
         try:
             df = self.load_data()
             if index < len(df):
-                df.at[index, "Status"] = status
-                df.at[index, "Last Updated"] = datetime.now()
+                # Use lowercase column names (file is now cleaned)
+                df.at[index, "status"] = status
+                
+                # Update timestamp if column exists
+                if "last_updated" in df.columns:
+                    df.at[index, "last_updated"] = datetime.now()
+                
                 self.save_data(df)
+                print(f"✅ Updated row {index}: status = {status}")
                 return True
             return False
-        except Exception:
+        except Exception as e:
+            print(f"❌ Error updating status: {e}")
             return False
-    
+
     def update_auto_reply_status(self, idx, value="Yes"):
         """Update auto-reply status"""
         try:
