@@ -1,6 +1,3 @@
-✅ Module 1: utils/task_normalizer.py
-python
-Copy code
 import pandas as pd
 
 LEGACY_STATUS_MAP = {
@@ -23,6 +20,7 @@ COLUMN_ALIASES = {
 }
 
 REQUIRED_COLUMNS = ["Subject", "Owner", "Status", "Priority", "Due Date", "Remarks", "CC"]
+
 
 def normalize_df(df: pd.DataFrame) -> pd.DataFrame:
     """Make df consistent across old/new schemas and remove ghost rows."""

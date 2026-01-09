@@ -22,9 +22,13 @@ from priority_manager import get_priority_emoji
 from utils.task_normalizer import normalize_df
 from datetime import datetime
 from config import EXCEL_FILE_PATH
+from views.view_followups import render_view_followups
+from views.dashboard_analytics import render_dashboard
+from views.manual_entry import render_manual_entry
+from dotenv import load_dotenv
+load_dotenv()
 
 # Page modules
-from pages.view_followups import render_view_followups
 from pages.process_emails import render_process_emails
 from pages.reminder_scheduler_page import render_reminder_scheduler
 from pages.send_task_reminders import render_send_task_reminders
@@ -40,6 +44,16 @@ BASE_DIR = Path(__file__).resolve().parent
 ENV_PATH = BASE_DIR / ".env"
 LOGO_PATH = BASE_DIR / "assets" / "koenig_logo.png"
 load_dotenv(dotenv_path=ENV_PATH)
+
+st.set_page_config(
+    page_title=os.getenv("APP_TITLE", "Follow-up & Reminder Agent"),
+    layout="wide"
+)
+
+if "authenticated" not in st.session_state:
+    st.session_state.authenticated = False
+    st.session_state.user_info = None
+    st.session_state.permissions = {}
 
 # ----------------------------
 # Cached singletons
@@ -113,34 +127,77 @@ validate_paths()
 
 excel_handler, email_processor, reminder_scheduler, manual_processor = init_handlers()
 
-# ----------------------------
-# Sidebar
-# ----------------------------
+# ============================
+# SIDEBAR (ONLY PLACE)
+# ============================
 with st.sidebar:
+
+    # Logo
     if LOGO_PATH.exists():
-        st.image(str(LOGO_PATH), width=150)
+        st.image(str(LOGO_PATH), width=140)
 
-    st.markdown("### Follow-up & Reminder Agent")
-    st.markdown("---")
+    # ---------- LOGIN ----------
+    if not st.session_state.authenticated:
+        st.markdown("### 🔐 Login")
 
+        username = st.text_input("Username", key="login_user")
+        password = st.text_input("Password", type="password", key="login_pass")
+
+        if st.button("Login", use_container_width=True):
+            user_info = user_manager.authenticate(username, password)
+            if user_info:
+                st.session_state.authenticated = True
+                st.session_state.user_info = user_info
+                st.session_state.permissions = user_manager.get_user_permissions(user_info)
+                st.rerun()
+            else:
+                st.error("Invalid credentials")
+
+        st.stop()   # ⛔ absolutely critical
+
+    # ---------- USER INFO ----------
     ui = st.session_state.user_info
-    st.markdown(f"**👤 {ui['full_name']}**")
-    st.caption(f"📧 {ui['email']}")
-    st.caption(f"🏢 {ui.get('department','')}")
-    st.caption(f"🔑 {ui.get('role','').replace('_',' ').title()}")
+    st.markdown("### 👤 User")
+    st.markdown(f"**{ui['full_name']}**")
+    st.caption(ui['email'])
+    st.caption(ui.get('department', ''))
+    st.caption(ui.get('role', '').replace('_', ' ').title())
 
     if st.button("🚪 Logout", use_container_width=True):
-        logout()
+        st.session_state.authenticated = False
+        st.session_state.user_info = None
+        st.session_state.permissions = {}
+        st.rerun()
 
+    # ---------- NAVIGATION ----------
     st.markdown("---")
+    st.markdown("### 📂 Navigation")
 
-    st.session_state.global_cc = st.text_input(
-        "Default CC (Global)",
-        value=st.session_state.global_cc,
-        placeholder="email1@..., email2@..."
+    menu = st.radio(
+        "Go to",
+        [
+            "📊 Dashboard",
+            "📥 View Follow-ups",
+            "✍️ Manual Entry",
+            "📄 Bulk MOM Upload",
+            "📧 Process Emails",
+            "⏰ Reminder Scheduler",
+            "📤 Send Task Reminders",
+            "⚠️ Shoddy Check",
+            "🔑 Change Password",
+            "📊 Logs / Status",
+            "⚙️ Run Engines"
+        ],
+        key="main_menu"
     )
 
+    # ---------- GLOBAL CC ----------
     st.markdown("---")
+    st.session_state.global_cc = st.text_input(
+        "Default CC (Global)",
+        value=st.session_state.get("global_cc", ""),
+        placeholder="email1@..., email2@..."
+    )
 
 # ----------------------------
 # Navigation based on permissions
