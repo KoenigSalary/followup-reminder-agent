@@ -339,7 +339,14 @@ elif menu == "📥 View Follow-ups":
         # Add Remarks column if missing
         if 'Remarks' not in df.columns:
             df['Remarks'] = ''
-        
+
+        # 🚫 Drop invalid / ghost rows
+        df = df[
+            df['Subject'].notna()
+            & df['Owner'].notna()
+            & (df['Subject'].astype(str).str.strip() != '')
+        ]
+
         for idx, row in df.iterrows():
             # ✅ Extract scalar values safely
             subject = row.get("Subject", "N/A")
