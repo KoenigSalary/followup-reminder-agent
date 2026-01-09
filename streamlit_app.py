@@ -1,14 +1,27 @@
 import os
 import streamlit as st
+import pandas as pd
+import subprocess
 from pathlib import Path
 from dotenv import load_dotenv
+from datetime import datetime
+from datetime import datetime, timedelta
 
 from config import EXCEL_FILE_PATH, APP_TITLE, validate_paths
 from utils.excel_handler import ExcelHandler
+from utils.task_normalizer import normalize_df
+from utils.safe_keys import unique_key
+from reminder_scheduler import get_next_reminder_date
+from priority_manager import get_priority_emoji
 from email_processor import EmailProcessor
 from reminder_scheduler import ReminderScheduler
 from manual_processor import ManualTaskProcessor
 from user_manager import UserManager
+from bulk_mom_processor import parse_bulk_mom
+from priority_manager import get_priority_emoji
+from utils.task_normalizer import normalize_df
+from datetime import datetime
+from config import EXCEL_FILE_PATH
 
 # Page modules
 from pages.view_followups import render_view_followups
@@ -27,7 +40,6 @@ BASE_DIR = Path(__file__).resolve().parent
 ENV_PATH = BASE_DIR / ".env"
 LOGO_PATH = BASE_DIR / "assets" / "koenig_logo.png"
 load_dotenv(dotenv_path=ENV_PATH)
-
 
 # ----------------------------
 # Cached singletons
@@ -77,7 +89,6 @@ def logout():
     st.session_state.user_info = None
     st.session_state.permissions = None
     st.rerun()
-
 
 # ----------------------------
 # App Boot
@@ -200,19 +211,7 @@ elif menu == "📊 Logs / Status":
 
 elif menu == "⚙️ Run Engines":
     render_run_engines()
-✅ Module 4: pages/view_followups.py (Mark Done + Reminders + NaN fix)
-python
-Copy code
-import streamlit as st
-import pandas as pd
-from datetime import datetime
-
-from utils.task_normalizer import normalize_df
-from utils.safe_keys import unique_key
-from reminder_scheduler import get_next_reminder_date
-from priority_manager import get_priority_emoji
-
-
+    
 def render_view_followups(excel_handler, user_manager):
     st.subheader("📥 View Follow-ups")
 
@@ -288,10 +287,6 @@ def render_view_followups(excel_handler, user_manager):
         st.caption(f"Next Reminder: {next_rem if next_rem else 'Calculated on next run'}")
 
         st.divider()
-✅ Module 5: pages/process_emails.py
-python
-Copy code
-import streamlit as st
 
 def render_process_emails(email_processor, excel_handler):
     st.subheader("📧 Process Emails")
@@ -300,10 +295,6 @@ def render_process_emails(email_processor, excel_handler):
         with st.spinner("Processing emails..."):
             count = email_processor.process_and_update(excel_handler)
         st.success(f"✅ Email processing completed. {count} item(s) updated.")
-✅ Module 6: pages/reminder_scheduler_page.py
-python
-Copy code
-import streamlit as st
 
 def render_reminder_scheduler(reminder_scheduler):
     st.subheader("⏰ Run Reminder Scheduler")
@@ -312,13 +303,6 @@ def render_reminder_scheduler(reminder_scheduler):
         with st.spinner("Sending reminders..."):
             sent = reminder_scheduler.run()
         st.success(f"✅ {sent} reminder(s) sent successfully.")
-✅ Module 7: pages/send_task_reminders.py
-python
-Copy code
-import streamlit as st
-import subprocess
-import pandas as pd
-from utils.task_normalizer import normalize_df
 
 def render_send_task_reminders(excel_handler):
     st.subheader("📤 Send Task Reminders")
@@ -346,11 +330,6 @@ def render_send_task_reminders(excel_handler):
         else:
             st.error("❌ Error sending reminders")
             st.text(result.stderr)
-✅ Module 8: pages/manual_entry.py
-python
-Copy code
-import streamlit as st
-from datetime import datetime
 
 def render_manual_entry(excel_handler):
     st.subheader("✍️ Manual Entry")
@@ -395,14 +374,6 @@ def render_manual_entry(excel_handler):
                 }])
                 st.success(f"✅ Task added via fallback! Total: {total}")
                 st.rerun()
-✅ Module 9: pages/bulk_mom_upload.py (Full workflow restored)
-python
-Copy code
-import streamlit as st
-import pandas as pd
-from datetime import datetime, timedelta
-from bulk_mom_processor import parse_bulk_mom
-from priority_manager import get_priority_emoji
 
 def render_bulk_mom_upload(excel_handler):
     st.subheader("📄 Bulk MOM Upload")
@@ -503,13 +474,6 @@ def render_bulk_mom_upload(excel_handler):
                 del st.session_state[k]
 
         st.rerun()
-✅ Module 10: pages/shoddy_check.py
-python
-Copy code
-import streamlit as st
-from pathlib import Path
-import pandas as pd
-from shoddy_manager import check_overdue_tasks
 
 def render_shoddy_check():
     st.title("⚠️ Shoddy Work Check")
@@ -529,11 +493,6 @@ def render_shoddy_check():
         df = pd.read_excel(log_file)
         if not df.empty:
             st.dataframe(df, use_container_width=True)
-✅ Module 11: pages/debug_tasks.py
-python
-Copy code
-import streamlit as st
-from utils.task_normalizer import normalize_df
 
 def render_debug_tasks(excel_handler):
     st.title("🔍 DEBUG Tasks")
@@ -541,11 +500,6 @@ def render_debug_tasks(excel_handler):
     st.write("Rows:", len(df))
     st.write("Columns:", list(df.columns))
     st.dataframe(df, use_container_width=True)
-✅ Module 12: pages/change_password.py
-python
-Copy code
-import streamlit as st
-from datetime import datetime
 
 def render_change_password(user_manager):
     st.subheader("🔑 Change Password")
@@ -570,11 +524,6 @@ def render_change_password(user_manager):
                 else:
                     user_manager.change_password(username, new_password)
                     st.success("✅ Password changed successfully!")
-✅ Module 13: pages/logs_status.py
-import streamlit as st
-import os
-from datetime import datetime
-from config import EXCEL_FILE_PATH
 
 def render_logs_status():
     st.subheader("📊 Logs / Status")
@@ -584,11 +533,6 @@ def render_logs_status():
         st.success("Excel file found and accessible.")
     else:
         st.error("Excel file missing.")
-✅ Module 14: pages/run_engines.py
-python
-Copy code
-import streamlit as st
-import subprocess
 
 def run_script(script_name):
     r = subprocess.run(["python3", script_name], capture_output=True, text=True)
