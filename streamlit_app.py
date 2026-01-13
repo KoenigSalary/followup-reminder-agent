@@ -8,13 +8,10 @@ import streamlit as st
 import pandas as pd
 from pathlib import Path
 import sys
-from datetime import datetime, timedelta
 
 # Setup
 BASE_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(BASE_DIR))
-
-from utils.excel_handler import ExcelHandler
 
 # Excel file path
 REGISTRY_FILE = BASE_DIR / "data" / "tasks_registry.xlsx"
@@ -290,52 +287,37 @@ def show_manual_entry():
         st.exception(e)
 
 def show_bulk_upload():
-    """Display the bulk upload page"""
+    """Display Bulk MOM Upload page"""
+    st.header("📂 Bulk MOM Upload")
+    st.markdown("Upload Minutes of Meeting (MOM) files to extract and create multiple tasks at once.")
     
-    st.markdown("### 📤 Bulk MOM Upload")
     st.markdown("---")
     
-    # Instructions
-    with st.expander("📖 How to upload tasks"):
-        st.markdown("""
-        **Supported Formats:**
-        
-        1. **Excel (.xlsx)** - Recommended
-        2. **CSV (.csv)**
-        
-        **Required Columns:**
-        - Subject (Task description)
-        - Owner (Assigned person)
-        
-        **Optional Columns:**
-        - Priority (URGENT/HIGH/MEDIUM/LOW)
-        - Due Date (DD-MM-YYYY or DD-MMM-YYYY)
-        - Status (OPEN/IN PROGRESS/COMPLETED)
-        - Remarks (Additional notes)
-        - CC (CC recipients)
-        """)
-    
-    # Upload section
+    # File uploader
     uploaded_file = st.file_uploader(
-        "Upload File",
-        type=['xlsx', 'csv'],
-        help="Upload Excel or CSV file with task information"
+        "Choose a file",
+        type=['xlsx', 'xls', 'csv', 'txt', 'pdf', 'docx'],
+        help="Upload Excel, CSV, Text, PDF, or Word files containing task information"
     )
     
-    if uploaded_file:
+    if uploaded_file is not None:
         st.success(f"✅ File uploaded: {uploaded_file.name}")
         
-        # Display file info
-        col1, col2 = st.columns(2)
+        # File info
+        col1, col2, col3 = st.columns(3)
         with col1:
             st.metric("File Name", uploaded_file.name)
-            st.metric("File Size", f"{uploaded_file.size / 1024:.2f} KB")
         with col2:
+            st.metric("File Size", f"{uploaded_file.size / 1024:.2f} KB")
+        with col3:
             file_type = uploaded_file.name.split('.')[-1].upper()
             st.metric("File Type", file_type)
         
+        st.markdown("---")
+        
         # Processing options
-        st.markdown("### ⚙️ Processing Options")
+        st.subheader("⚙️ Processing Options")
+        
         col1, col2 = st.columns(2)
         with col1:
             default_priority = st.selectbox(
@@ -346,167 +328,122 @@ def show_bulk_upload():
         with col2:
             default_status = st.selectbox(
                 "Default Status",
-                ["OPEN", "IN PROGRESS", "COMPLETED"],
+                ["OPEN", "PENDING", "IN PROGRESS"],
                 index=0
             )
         
-        # Add default due date option
-        use_default_due = st.checkbox("Set default due date for tasks without dates", value=True)
-        default_due_days = 7
-        if use_default_due:
-            default_due_days = st.number_input("Days from today", min_value=1, max_value=365, value=7)
+        st.markdown("---")
         
-        # Parse file
-        tasks_to_create = []
+        # Preview section
+        st.subheader("👁️ File Preview")
         
+        df = None
         try:
-            if uploaded_file.name.endswith('.xlsx'):
+            if uploaded_file.name.endswith(('.xlsx', '.xls')):
                 df = pd.read_excel(uploaded_file)
+                st.dataframe(df.head(10), use_container_width=True)
+                st.info(f"📊 Found {len(df)} rows in the file")
+                
             elif uploaded_file.name.endswith('.csv'):
                 df = pd.read_csv(uploaded_file)
-            else:
-                st.error("Unsupported file type")
-                return
-            
-            # Show preview
-            st.markdown("### 👁️ File Preview")
-            st.dataframe(df.head(10), use_container_width=True)
-            
-            # Column mapping
-            st.markdown("### 🔗 Column Mapping")
-            st.write("Map your file columns to task fields:")
-            
-            columns = [''] + list(df.columns)
-            
-            col1, col2, col3 = st.columns(3)
-            with col1:
-                subject_col = st.selectbox("Subject Column", columns, index=columns.index('Subject') if 'Subject' in columns else 0)
-                owner_col = st.selectbox("Owner Column", columns, index=columns.index('Owner') if 'Owner' in columns else 0)
-            with col2:
-                priority_col = st.selectbox("Priority Column", columns, index=columns.index('Priority') if 'Priority' in columns else 0)
-                due_date_col = st.selectbox("Due Date Column", columns, index=columns.index('Due Date') if 'Due Date' in columns else 0)
-            with col3:
-                remarks_col = st.selectbox("Remarks Column", columns, index=columns.index('Remarks') if 'Remarks' in columns else 0)
-                cc_col = st.selectbox("CC Column", columns, index=columns.index('CC') if 'CC' in columns else 0)
-            
-            # Validate required fields
-            if not subject_col or not owner_col:
-                st.warning("⚠️ Please select at least Subject and Owner columns")
-                return
-            
-            # Convert to task list
-            for idx, row in df.iterrows():
-                task = {
-                    'Subject': str(row[subject_col]) if subject_col and pd.notna(row.get(subject_col)) else '',
-                    'Owner': str(row[owner_col]) if owner_col and pd.notna(row.get(owner_col)) else '',
-                    'Priority': str(row[priority_col]) if priority_col and pd.notna(row.get(priority_col)) else default_priority,
-                    'Status': default_status,
-                    'Due Date': str(row[due_date_col]) if due_date_col and pd.notna(row.get(due_date_col)) else '',
-                    'Remarks': str(row[remarks_col]) if remarks_col and pd.notna(row.get(remarks_col)) else '',
-                    'CC': str(row[cc_col]) if cc_col and pd.notna(row.get(cc_col)) else ''
-                }
+                st.dataframe(df.head(10), use_container_width=True)
+                st.info(f"📊 Found {len(df)} rows in the file")
                 
-                # Apply default due date
-                if not task['Due Date'] and use_default_due:
-                    due_date = datetime.now() + timedelta(days=default_due_days)
-                    task['Due Date'] = due_date.strftime('%d-%b-%Y')
+            elif uploaded_file.name.endswith('.txt'):
+                content = uploaded_file.read().decode('utf-8')
+                st.text_area("File Content", content, height=300)
                 
-                # Validate task
-                if task['Subject'] and task['Owner']:
-                    tasks_to_create.append(task)
-            
-            # Show preview of mapped tasks
-            if tasks_to_create:
-                st.markdown(f"### ✅ Found {len(tasks_to_create)} valid tasks")
-                preview_df = pd.DataFrame(tasks_to_create)
-                st.dataframe(preview_df, use_container_width=True)
             else:
-                st.warning("No valid tasks found. Please check your column mapping.")
-                return
-            
+                st.info("📄 File uploaded successfully. Preview not available for this file type.")
+        
         except Exception as e:
-            st.error(f"❌ Error reading file: {str(e)}")
-            import traceback
-            st.code(traceback.format_exc())
-            return
+            st.error(f"❌ Error reading file: {e}")
+        
+        # Column mapping for Excel/CSV
+        if df is not None:
+            st.markdown("---")
+            st.subheader("🔗 Column Mapping")
+            st.markdown("Map your file columns to task fields:")
+            
+            cols = df.columns.tolist()
+            col1, col2, col3 = st.columns(3)
+            
+            with col1:
+                subject_col = st.selectbox("Subject Column", [""] + cols, key="subject_col")
+                owner_col = st.selectbox("Owner Column", [""] + cols, key="owner_col")
+            
+            with col2:
+                priority_col = st.selectbox("Priority Column", [""] + cols, key="priority_col")
+                due_date_col = st.selectbox("Due Date Column", [""] + cols, key="due_date_col")
+            
+            with col3:
+                remarks_col = st.selectbox("Remarks Column", [""] + cols, key="remarks_col")
+                cc_col = st.selectbox("CC Column", [""] + cols, key="cc_col")
+        
+        st.markdown("---")
         
         # Process button
-        if tasks_to_create and st.button("🔄 Process and Create Tasks", type="primary"):
-            with st.spinner("Creating tasks..."):
-                try:
-                    # Initialize ExcelHandler with correct path
-                    registry_path = BASE_DIR / "data" / "tasks_registry.xlsx"
-                    excel_handler = ExcelHandler(str(registry_path))
-                    
-                    # Read existing data
-                    df_registry = excel_handler.read_data()
-                    
-                    created_count = 0
-                    created_tasks = []
-                    
-                    for task_data in tasks_to_create:
-                        try:
-                            # Generate Task ID
-                            today = datetime.now()
-                            date_str = today.strftime('%Y%m%d')
-                            
-                            # Find next available number for today
-                            existing_ids = df_registry[df_registry['Task ID'].str.contains(date_str, na=False)]['Task ID'].tolist()
-                            next_num = len(existing_ids) + 1
-                            task_id = f"MAN-{date_str}-{next_num:03d}"
-                            
-                            # Create new task row
-                            new_task = {
-                                'Task ID': task_id,
-                                'Subject': task_data['Subject'],
-                                'Owner': task_data['Owner'],
-                                'Priority': task_data.get('Priority', default_priority),
-                                'Status': task_data.get('Status', default_status),
-                                'Due Date': task_data.get('Due Date', ''),
-                                'Created Date': today.strftime('%d-%b-%Y'),
-                                'Last Reminder Date': '',
-                                'Remarks': task_data.get('Remarks', ''),
-                                'CC': task_data.get('CC', '')
-                            }
-                            
-                            # Append to dataframe
-                            df_registry = pd.concat([df_registry, pd.DataFrame([new_task])], ignore_index=True)
-                            created_tasks.append(new_task)
-                            created_count += 1
-                            
-                        except Exception as e:
-                            st.warning(f"⚠️ Skipped task: {task_data.get('Subject', 'Unknown')} - Error: {str(e)}")
-                    
-                    # Save updated registry
-                    if created_count > 0:
-                        excel_handler.write_data(df_registry)
+        col1, col2, col3 = st.columns([1, 2, 1])
+        with col2:
+            if st.button("🚀 Process and Create Tasks", use_container_width=True, type="primary"):
+                with st.spinner("Processing file..."):
+                    try:
+                        from datetime import datetime
+                        
+                        excel_handler = get_excel_handler()
+                        if not excel_handler:
+                            st.error("❌ Could not initialize ExcelHandler")
+                            return
+                        
+                        created_count = 0
+                        
+                        if df is not None:
+                            for idx, row in df.iterrows():
+                                task_data = {
+                                    'Owner': row.get(owner_col, 'Unassigned') if owner_col else 'Unassigned',
+                                    'Subject': row.get(subject_col, f'Task from {uploaded_file.name}') if subject_col else f'Task {idx+1}',
+                                    'Priority': row.get(priority_col, default_priority) if priority_col else default_priority,
+                                    'Status': default_status,
+                                    'Due Date': row.get(due_date_col, datetime.now().strftime('%Y-%m-%d')) if due_date_col else datetime.now().strftime('%Y-%m-%d'),
+                                    'Remarks': row.get(remarks_col, f'Imported from {uploaded_file.name}') if remarks_col else f'Imported from {uploaded_file.name}',
+                                    'CC': row.get(cc_col, '') if cc_col else ''
+                                }
+                                
+                                excel_handler.add_task(task_data)
+                                created_count += 1
                         
                         st.success(f"✅ Successfully created {created_count} tasks from {uploaded_file.name}")
+                        st.balloons()
                         
-                        # Show summary
-                        st.markdown("### 📊 Summary:")
-                        col1, col2, col3 = st.columns(3)
-                        with col1:
-                            st.metric("Tasks Created", created_count)
-                        with col2:
-                            st.metric("Default Priority", default_priority)
-                        with col3:
-                            st.metric("Default Status", default_status)
+                        st.info(f"📊 Summary:\n- File: {uploaded_file.name}\n- Tasks Created: {created_count}\n- Priority: {default_priority}\n- Status: {default_status}")
                         
-                        # Show created tasks
-                        st.markdown("### ✅ Created Tasks:")
-                        created_df = pd.DataFrame(created_tasks)
-                        st.dataframe(created_df, use_container_width=True)
-                        
-                        st.info("💡 Tip: Go to 'Dashboard' or 'View Follow-ups' to see all created tasks")
-                    else:
-                        st.warning("No tasks were created.")
-                
-                except Exception as e:
-                    st.error(f"❌ Error creating tasks: {str(e)}")
-                    import traceback
-                    st.code(traceback.format_exc())
-
+                    except Exception as e:
+                        st.error(f"❌ Error processing file: {e}")
+                        st.exception(e)
+    
+    else:
+        st.info("👆 Upload a file to get started")
+        
+        st.markdown("---")
+        st.subheader("📥 Download Sample Template")
+        
+        sample_data = {
+            'Subject': ['Prepare Q1 Report', 'Review Contract', 'Update Documentation'],
+            'Owner': ['Praveen', 'Rajesh', 'Amit'],
+            'Priority': ['HIGH', 'MEDIUM', 'LOW'],
+            'Due Date': ['2026-01-15', '2026-01-20', '2026-01-25'],
+            'Remarks': ['Finance team needs this urgently', 'Legal review pending', 'Update user guide'],
+            'CC': ['', 'praveen@example.com', '']
+        }
+        sample_df = pd.DataFrame(sample_data)
+        
+        st.download_button(
+            label="📥 Download Excel Template",
+            data=sample_df.to_csv(index=False).encode('utf-8'),
+            file_name="task_upload_template.csv",
+            mime="text/csv",
+            use_container_width=True
+        )
 
 def show_send_reminders():
     """Display send reminders page"""
