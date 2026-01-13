@@ -18,6 +18,24 @@ from utils.excel_handler import ExcelHandler
 # Excel file path
 REGISTRY_FILE = BASE_DIR / "data" / "tasks_registry.xlsx"
 
+def ensure_registry_exists():
+    REGISTRY_FILE.parent.mkdir(parents=True, exist_ok=True)
+    if not REGISTRY_FILE.exists():
+        # Create an empty registry with required columns
+        df = pd.DataFrame(columns=[
+            "Task ID","Subject","Owner","Priority","Status","Due Date",
+            "Created Date","Last Reminder Date","Remarks","CC"
+        ])
+        df.to_excel(REGISTRY_FILE, index=False)
+
+def get_excel_handler_safe():
+    try:
+        ensure_registry_exists()
+        return ExcelHandler(str(REGISTRY_FILE))
+    except Exception as e:
+        st.error(f"❌ Registry init failed: {e}")
+        return None
+
 # Page config
 st.set_page_config(
     page_title="Follow-up & Reminder Team | Koenig Solutions",
@@ -227,15 +245,26 @@ def show_sidebar():
         
         return page
 
+def ensure_registry_exists():
+    REGISTRY_FILE.parent.mkdir(parents=True, exist_ok=True)
+
+    if not REGISTRY_FILE.exists():
+        # Create an empty registry with the expected columns
+        empty = pd.DataFrame(columns=[
+            "Task ID", "Subject", "Owner", "Priority", "Status", "Due Date",
+            "Created Date", "Last Reminder Date", "Remarks", "CC"
+        ])
+        empty.to_excel(REGISTRY_FILE, index=False)
+
 def get_excel_handler():
-    """Get ExcelHandler with correct path"""
+    """Get ExcelHandler with correct path (Cloud-safe)"""
     try:
-        from utils.excel_handler import ExcelHandler
+        ensure_registry_exists()
         return ExcelHandler(str(REGISTRY_FILE))
     except Exception as e:
         st.error(f"❌ Error initializing ExcelHandler: {e}")
         return None
-
+        
 def show_dashboard():
     """Display dashboard"""
     try:
