@@ -341,12 +341,12 @@ def show_bulk_upload():
         try:
             if uploaded_file.name.endswith(('.xlsx', '.xls')):
                 df = pd.read_excel(uploaded_file)
-                st.dataframe(df.head(10), use_container_width=True)
+                st.dataframe(df, width='stretch')
                 st.info(f"📊 Found {len(df)} rows in the file")
                 
             elif uploaded_file.name.endswith('.csv'):
                 df = pd.read_csv(uploaded_file)
-                st.dataframe(df.head(10), use_container_width=True)
+                st.dataframe(df, width='stretch')
                 st.info(f"📊 Found {len(df)} rows in the file")
                 
             elif uploaded_file.name.endswith('.txt'):
