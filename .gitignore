@@ -1,58 +1,36 @@
-# Secrets & credentials
-.env
-
-# Python cache / compiled
+# Python
 __pycache__/
-*.pyc
-*.pyo
-*.bin
-
-# Data files (live business data)
-data/*.xlsx
-data/*.csv
-
-# Virtual environment
+*.py[cod]
+*.so
+.Python
 venv/
+env/
 
-# OS files
-.DS_Store
+# Streamlit
+.streamlit/
 
-# Logs
-*.log
+# Environment (SENSITIVE!)
+.env
+*.env
 
-DEPLOYMENT_GUIDE.md
-DEPLOYMENT_GUIDE.md
-
-# Exception: Allow Team Directory (lookup data)
-
-# Exception: Allow Team Directory (lookup data)
-!data/Team_Directory.xlsx
-
-# Ignore backup files
-*_backup.py
-*_old.py
-*.save
-
-# Backup files
-*.backup
-*.backup_*
-*.old
-*.old_*
-
-# Data files (contain sensitive info)
+# Data files
 data/*.xlsx
 data/*.xls
-!data/Team_Directory.xlsx.template
+!data/.gitkeep
 
-# Log files
+# Logs
 logs/*.log
-*.log
+!logs/.gitkeep
 
-# Python cache
-__pycache__/
-*.pyc
-*.pyo
+# Backups
+backups/
+*.backup
+*.bak
+*.broken
 
-# Environment
-.env
-venv/
+# macOS
+.DS_Store
+
+# IDE
+.vscode/
+.idea/

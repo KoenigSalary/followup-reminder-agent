@@ -7,8 +7,8 @@ from dotenv import load_dotenv
 import pandas as pd
 
 # Import Smart Reply Processor and Acknowledgement Manager
-from smart_reply_processor import SmartReplyProcessor
-from acknowledgement_manager import evaluate_performance, send_acknowledgement
+from .acknowledgement_manager import evaluate_performance, send_acknowledgement
+from .smart_reply_processor import SmartReplyProcessor
 
 from config import (
     EMAIL_SENDER,
@@ -17,7 +17,7 @@ from config import (
     EMAIL_PASSWORD_ENV_KEY
 )
 
-load_dotenv()
+load_dotenv()  # harmless locally, ignored in cloud
 
 SMTP_PASSWORD = os.getenv("CEO_AGENT_EMAIL_PASSWORD")
 
@@ -36,32 +36,13 @@ class EmailProcessor:
         # Initialize smart processor
         self.smart_processor = SmartReplyProcessor()
 
-    def _normalize_row(self, row):
-        """Normalize task row to handle different column names"""
-        return {
-            'subject': row.get('Subject') or row.get('task_text') or 'Task',
-            'task_text': row.get('task_text') or row.get('Subject') or 'Task',
-            'owner': row.get('Owner') or row.get('owner') or 'Unknown',
-            'owner_email': row.get('owner_email') or row.get('Owner Email') or '',
-            'status': str(row.get('Status') or row.get('status') or 'OPEN').upper(),
-            'priority': row.get('Priority') or row.get('priority') or 'MEDIUM',
-            'deadline': row.get('Due Date') or row.get('deadline'),
-            'last_reminder_date': row.get('Last Reminder Date') or row.get('last_reminder_date'),
-            'task_id': row.get('task_id') or row.get('Task ID') or 'N/A'
-        }
-
-    def send_email(self, to_email, subject, body):
-        """
-        Send email with proper parameter order
-        
-        Args:
-            to_email: Recipient email address
-            subject: Email subject
-            body: Email body text
-        """
+    # -------------------------------------------------
+    # Send generic email
+    # -------------------------------------------------
+    def send_email(self, subject, body, to_email=None):
         msg = MIMEMultipart()
         msg["From"] = EMAIL_SENDER
-        msg["To"] = to_email
+        msg["To"] = to_email or EMAIL_SENDER
         msg["Subject"] = subject
 
         msg.attach(MIMEText(body, "plain"))
@@ -70,9 +51,10 @@ class EmailProcessor:
             server.starttls()
             server.login(EMAIL_SENDER, self.password)
             server.send_message(msg)
-        
-        print(f"✅ Email sent to {to_email}")
 
+    # -------------------------------------------------
+    # SAFE AUTO-REPLY (Standard acknowledgment)
+    # -------------------------------------------------
     def send_auto_reply(self, to_email, subject):
         reply_subject = f"Re: {subject}"
         body = (
@@ -96,8 +78,13 @@ class EmailProcessor:
         
         print(f"📧 Standard auto-reply sent to {to_email}")
 
+    # -------------------------------------------------
+    # SMART ACKNOWLEDGMENT (With task summary)
+    # -------------------------------------------------
     def send_smart_acknowledgment(self, to_email, subject, body):
-        """Send smart acknowledgment email with task summary"""
+        """
+        Send smart acknowledgment email with task summary
+        """
         try:
             msg = MIMEMultipart()
             msg["From"] = EMAIL_SENDER
@@ -118,10 +105,16 @@ class EmailProcessor:
             print(f"❌ Failed to send smart acknowledgment: {e}")
             return False
 
+    # -------------------------------------------------
+    # SEND PERFORMANCE ACKNOWLEDGEMENT (For completed tasks)
+    # -------------------------------------------------
     def send_performance_feedback(self, completed_tasks):
-        """Send performance-based acknowledgement for completed tasks"""
+        """
+        Send performance-based acknowledgement for completed tasks
+        """
         from pathlib import Path
         
+        # Load Team Directory for email addresses
         team_file = Path("data/Team_Directory.xlsx")
         if not team_file.exists():
             print("⚠️ Team Directory not found, skipping performance emails")
@@ -131,6 +124,7 @@ class EmailProcessor:
         
         for task in completed_tasks:
             try:
+                # Find owner's email
                 owner = task.get('owner', '')
                 owner_row = team_df[
                     team_df['Name'].str.contains(owner, case=False, na=False) |
@@ -144,6 +138,7 @@ class EmailProcessor:
                 owner_email = owner_row.iloc[0]['Email']
                 owner_full_name = owner_row.iloc[0]['Name']
                 
+                # Evaluate performance
                 deadline = pd.to_datetime(task.get('deadline'))
                 completed_date = pd.to_datetime(task.get('completed_date', datetime.now()))
                 priority = task.get('priority', 'medium')
@@ -154,6 +149,7 @@ class EmailProcessor:
                     priority=priority
                 )
                 
+                # Prepare task dict for acknowledgement
                 task_info = {
                     'task_id': task.get('task_id', ''),
                     'task_text': task.get('task_text', '')[:100],
@@ -163,6 +159,7 @@ class EmailProcessor:
                     'meeting_id': task.get('meeting_id', 'N/A')
                 }
                 
+                # Send acknowledgement
                 send_acknowledgement(
                     owner=owner_full_name,
                     owner_email=owner_email,
@@ -173,6 +170,9 @@ class EmailProcessor:
             except Exception as e:
                 print(f"❌ Failed to send performance feedback for {task.get('task_id')}: {e}")
 
+    # -------------------------------------------------
+    # Process emails & update Excel (FULL AUTOMATION)
+    # -------------------------------------------------
     def process_and_update(self, excel_handler):
         """
         FULLY AUTOMATED version with smart reply processing:
@@ -190,64 +190,63 @@ class EmailProcessor:
             auto_reply = str(row.get("Auto Reply Sent", "")).strip().lower()
             
             if auto_reply != "yes":
-                subject = (
-                    row.get("Subject") or 
-                    row.get("task_text") or 
-                    row.get("task") or 
-                    "CEO Follow-up Task"
-                )
+                subject = row.get("Subject", "CEO Follow-up Task")
                 email_body = row.get("Body", "")
                 from_email = row.get("From", "")
                 
-                is_reply = str(subject).startswith("Re: ⏰") or "Re:" in str(subject)
+                # Check if this is a REPLY to a reminder email
+                is_reply = subject.startswith("Re: ⏰") or "Re:" in subject
                 
                 if is_reply and email_body:
+                    # This is a reply - process it smartly
                     try:
+                        # Extract employee name from email
                         if from_email and '@' in from_email:
-                             employee_name = from_email.split('@')[0].replace('.', ' ').title()
+                            employee_name = from_email.split('@')[0].replace('.', ' ').title()
                         else:
                             employee_name = "Team Member"
-        
+                        
                         print(f"\n🔍 Processing reply from {from_email}...")
-        
+                        
+                        # Process the reply and update tasks
                         result = self.smart_processor.process_reply_and_update_tasks(
                             email_body=email_body,
                             from_email=from_email
                         )
-        
-                        # Track if we sent ANY email (prevent duplicates)
-                        email_sent = False
-        
+                        
                         if result['success'] and (result['completed'] or result['pending']):
+                            # Generate acknowledgment email
                             ack_body = self.smart_processor.generate_acknowledgment_email(
                                 process_result=result,
                                 to_name=employee_name
                             )
-            
+                            
+                            # Send acknowledgment
                             reply_subject = f"Re: {subject}" if not subject.startswith("Re:") else subject
                             self.send_smart_acknowledgment(
                                 to_email=from_email,
                                 subject=reply_subject,
                                 body=ack_body
                             )
-                            email_sent = True  # Mark as sent
-            
+                            
+                            # 🌟 NEW: Send performance feedback for completed tasks
                             if result['completed']:
                                 print(f"\n🎉 Sending performance feedback for {len(result['completed'])} completed tasks...")
                                 self.send_performance_feedback(result['completed'])
-            
+                            
+                            # Mark as processed
                             df.at[idx, "Auto Reply Sent"] = "Yes"
                             if "Processed Date" in df.columns:
                                 df.at[idx, "Processed Date"] = datetime.now()
-            
+                            
                             sent_count += 1
-            
+                            
                             print(f"✅ Smart processed reply from {from_email}")
                             print(f"   Completed: {len(result['completed'])} tasks")
                             print(f"   Pending: {len(result['pending'])} tasks")
-        
-                        # ONLY send standard auto-reply if smart processing found nothing
-                        if not email_sent:
+                            print(f"   Performance emails: {len(result['completed'])} sent")
+                        else:
+                            # Reply didn't contain task updates - send standard acknowledgment
                             print(f"ℹ️  No task updates found, sending standard reply")
                             self.send_auto_reply(
                                 to_email=from_email,
@@ -255,12 +254,12 @@ class EmailProcessor:
                             )
                             df.at[idx, "Auto Reply Sent"] = "Yes"
                             sent_count += 1
-            
+                            
                     except Exception as e:
                         print(f"❌ Error processing smart reply: {e}")
                         import traceback
                         traceback.print_exc()
-                        # Only send auto-reply on error if we haven't sent anything yet
+                        # Fallback to standard auto-reply
                         self.send_auto_reply(
                             to_email=from_email if from_email else EMAIL_SENDER,
                             subject=subject
@@ -268,7 +267,7 @@ class EmailProcessor:
                         df.at[idx, "Auto Reply Sent"] = "Yes"
                         sent_count += 1
                 else:
-                    # For non-reply emails, send standard auto-reply once
+                    # New email (not a reply) - send standard auto-reply
                     self.send_auto_reply(
                         to_email=from_email if from_email else EMAIL_SENDER,
                         subject=subject
@@ -276,7 +275,7 @@ class EmailProcessor:
                     df.at[idx, "Auto Reply Sent"] = "Yes"
                     sent_count += 1
                 
-                break
+                break  # ONLY one email per run
         
         excel_handler.save_data(df)
         return sent_count
