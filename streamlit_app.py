@@ -286,8 +286,6 @@ def show_manual_entry():
         st.error(f"❌ Error: {e}")
         st.exception(e)
 
-# Replace the show_bulk_upload function in streamlit_app.py with this fixed version
-
 def show_bulk_upload():
     """Display the bulk upload page"""
     
