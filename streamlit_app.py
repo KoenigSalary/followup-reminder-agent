@@ -318,6 +318,9 @@ def show_manual_entry():
         st.exception(e)
 
 def show_bulk_upload():
+import importlib
+st.write("openpyxl import:", importlib.util.find_spec("openpyxl"))
+
     """Display Bulk MOM Upload page"""
     st.header("📂 Bulk MOM Upload")
     st.markdown("Upload Minutes of Meeting (MOM) files to extract and create multiple tasks at once.")
@@ -370,8 +373,8 @@ def show_bulk_upload():
         
         df = None
         try:
-            if uploaded_file.name.endswith(('.xlsx', '.xls')):
-                df = pd.read_excel(uploaded_file)
+            if uploaded_file.name.endswith(".xlsx"):
+                df = pd.read_excel(uploaded_file, engine="openpyxl")
                 st.dataframe(df, width='stretch')
                 st.info(f"📊 Found {len(df)} rows in the file")
                 
