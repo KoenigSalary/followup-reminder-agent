@@ -11,11 +11,15 @@ Features:
 
 import streamlit as st
 import pandas as pd
-import plotly.express as px
-import plotly.graph_objects as go
 from datetime import date, datetime, timedelta
 from utils.task_normalizer import normalize_df
 
+try:
+    import plotly.express as px
+    import plotly.graph_objects as go
+except ModuleNotFoundError:
+    px = None
+    go = None
 
 def get_priority_emoji(priority):
     """Get emoji for priority level"""
@@ -212,14 +216,17 @@ def render_priority_breakdown(df):
             percentage = (count / len(df) * 100) if len(df) > 0 else 0
             st.write(f"{emoji} **{priority}**: {count} ({percentage:.1f}%)")
 
+        if px is None:
+            st.warning("Plotly not installed. Showing basic chart.")
+            st.bar_chart(status_counts)
+            return
 
 def render_status_breakdown(df):
     """Render status breakdown"""
     st.subheader("📊 Task Status Overview")
-    
+
     status_counts = df['status'].value_counts()
-    
-    # Pie chart
+
     fig = px.pie(
         values=status_counts.values,
         names=status_counts.index,
@@ -232,12 +239,16 @@ def render_status_breakdown(df):
             'IN PROGRESS': '#4169E1'
         }
     )
-    
+
     fig.update_traces(textposition='inside', textinfo='percent+label')
     fig.update_layout(height=400)
-    
+
     st.plotly_chart(fig, use_container_width=True)
 
+    if px is None:
+        st.warning("Plotly not installed. Showing basic chart.")
+        st.bar_chart(status_counts)
+        return
 
 def render_owner_workload(df):
     """Render owner workload analysis"""
@@ -281,8 +292,7 @@ def render_owner_workload(df):
     }).rename(columns={'status': 'Open Tasks', 'priority': 'Urgent Tasks'})
     
     workload_summary = workload_summary.sort_values('Open Tasks', ascending=False)
-    st.dataframe(workload_summary, use_container_width=True)
-
+    st.dataframe(workload_summary, use_container_width=True)     
 
 def render_timeline_view(df, today):
     """Render timeline of tasks"""
@@ -314,7 +324,6 @@ def render_timeline_view(df, today):
     
     fig.update_layout(height=400)
     st.plotly_chart(fig, use_container_width=True)
-
 
 def render_overdue_alerts(df, today):
     """Render overdue tasks alert"""
