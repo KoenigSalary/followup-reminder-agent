@@ -266,16 +266,13 @@ def get_excel_handler():
         return None
         
 def show_dashboard():
-    """Display dashboard"""
-    try:
-        from views.dashboard_analytics import render_dashboard
-        
-        excel_handler = get_excel_handler()
-        if excel_handler:
-            render_dashboard(excel_handler)
-    except Exception as e:
-        st.error(f"❌ Dashboard error: {e}")
-        st.exception(e)
+    import importlib
+    st.write("openpyxl spec:", importlib.util.find_spec("openpyxl"))
+
+    from views.dashboard_analytics import render_dashboard
+    excel_handler = get_excel_handler()
+    if excel_handler:
+        render_dashboard(excel_handler)
 
 def show_view_followups():
     """Display view follow-ups page"""
