@@ -422,8 +422,8 @@ with col2:
                             "Subject": row.get(subject_col, f"Task from {uploaded_file.name}") if subject_col else f"Task {idx+1}",
                             "Priority": row.get(priority_col, default_priority) if priority_col else default_priority,
                             "Status": default_status,
-                            "Due Date": parse_due_date(row.get(due_date_col)) if due_date_col else datetime.now().strftime("%Y-%m-%d")
-                            "Remarks": clean(row.get(remarks_col)) or f"Imported from {uploaded_file.name}"
+                            "Due Date": parse_due_date(row.get(due_date_col)) if due_date_col else datetime.now().strftime("%Y-%m-%d")",
+                            "Remarks": clean(row.get(remarks_col)) or f"Imported from {uploaded_file.name}",
                             "CC": row.get(cc_col, "") if cc_col else ""
                         }
                         excel_handler.add_task(task_data)
