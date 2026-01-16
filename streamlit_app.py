@@ -411,7 +411,7 @@ with col2:
         excel_handler = get_excel_handler()
         if not excel_handler:
             st.error("❌ Could not initialize ExcelHandler")
-            return
+                return
     
             created_count = 0
             try:
