@@ -271,7 +271,7 @@ def show_bulk_upload():
     st.markdown("Upload Minutes of Meeting (MOM) files to extract and create multiple tasks at once.")
     st.markdown("---")
 
-    # ✅ Ensure mapping keys always exist (prevents NameError)
+    # ✅ Ensure mapping keys always exist (prevents NameError on reruns)
     for k in ["subject_col", "owner_col", "priority_col", "due_date_col", "remarks_col", "cc_col"]:
         st.session_state.setdefault(k, "")
 
@@ -363,12 +363,15 @@ def show_bulk_upload():
             st.markdown("### ✅ Selected Mapping (Debug)")
             st.json({k: st.session_state[k] for k in ["subject_col","owner_col","priority_col","due_date_col","remarks_col","cc_col"]})
 
-        # ✅ Require mapping (only here)
-        if not st.session_state["subject_col"] or not st.session_state["owner_col"] or not st.session_state["remarks_col"]:
-            st.error("Please select at least: Meeting ID/MOM No., Owner, and Remarks columns.")
+        # ✅ Require mapping INCLUDING due date (fixes "all due today")
+        if (not st.session_state["subject_col"]
+            or not st.session_state["owner_col"]
+            or not st.session_state["remarks_col"]
+            or not st.session_state["due_date_col"]):
+            st.error("Please select: MOM No., Owner, Remarks, and Due Date columns.")
             st.stop()
 
-    # ---- Helpers (keep inside function) ----
+    # ---- Helpers ----
     from datetime import datetime
 
     def clean(v):
@@ -379,13 +382,30 @@ def show_bulk_upload():
         return str(v).strip()
 
     def parse_due_date(v):
-        v = clean(v)
-        if not v:
-            return datetime.now().strftime("%Y-%m-%d")
+        # empty
+        if v is None or (isinstance(v, float) and pd.isna(v)):
+            return ""
+
+        # already datetime/date
+        if hasattr(v, "strftime"):
+            return v.strftime("%Y-%m-%d")
+
+        s = str(v).strip()
+        if not s:
+            return ""
+
+        # excel serial date (if it comes as a number-like string)
+        if s.isdigit():
+            try:
+                return pd.to_datetime(float(s), unit="D", origin="1899-12-30").strftime("%Y-%m-%d")
+            except Exception:
+                pass
+
+        # dd.mm.yyyy / dd-mm-yyyy / dd/mm/yyyy
         try:
-            return pd.to_datetime(v, dayfirst=True).strftime("%Y-%m-%d")
+            return pd.to_datetime(s, dayfirst=True, errors="raise").strftime("%Y-%m-%d")
         except Exception:
-            return datetime.now().strftime("%Y-%m-%d")
+            return ""
 
     # Process button
     st.markdown("---")
@@ -399,21 +419,23 @@ def show_bulk_upload():
 
             created_count = 0
             try:
-                df2 = df.dropna(how="all")
+                df2 = df.dropna(how="all")  # skip fully blank rows
 
                 for idx, row in df2.iterrows():
                     meeting_id_val = clean(row.get(st.session_state["subject_col"]))
                     owner_val = clean(row.get(st.session_state["owner_col"]))
                     remarks_val = clean(row.get(st.session_state["remarks_col"]))
+
                     priority_val = clean(row.get(st.session_state["priority_col"])) if st.session_state["priority_col"] else ""
                     cc_val = clean(row.get(st.session_state["cc_col"])) if st.session_state["cc_col"] else ""
-                    due_val = parse_due_date(row.get(st.session_state["due_date_col"])) if st.session_state["due_date_col"] else datetime.now().strftime("%Y-%m-%d")
+                    due_raw = row.get(st.session_state["due_date_col"])
+                    due_val = parse_due_date(due_raw)
 
                     # Skip empty-ish rows
                     if not meeting_id_val and not owner_val and not remarks_val:
                         continue
 
-                    # ✅ Make a real task Subject from remarks (first line / first 80 chars)
+                    # ✅ Make real Subject from remarks (first line / 80 chars)
                     subject_text = (remarks_val.splitlines()[0] if remarks_val else f"Task {idx+1}")[:80]
 
                     task_data = {
@@ -422,7 +444,7 @@ def show_bulk_upload():
                         "Subject": subject_text,
                         "Priority": priority_val or default_priority,
                         "Status": default_status,
-                        "Due Date": due_val,
+                        "Due Date": due_val or datetime.now().strftime("%Y-%m-%d"),
                         "Remarks": remarks_val or f"Imported from {uploaded_file.name}",
                         "CC": cc_val
                     }
