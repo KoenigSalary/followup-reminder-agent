@@ -266,7 +266,6 @@ def show_manual_entry():
         st.error(f"❌ Error: {e}")
         st.exception(e)
 
-
 def show_bulk_upload():
 
     st.header("📂 Bulk MOM Upload")
@@ -356,6 +355,8 @@ def show_bulk_upload():
         "remarks_col": remarks_col,
         "cc_col": cc_col
     })
+    # ✅ Default values so debug never crashes
+    subject_col = owner_col = priority_col = due_date_col = remarks_col = cc_col = ""
 
     # Column mapping for Excel/CSV
     if df is not None:
