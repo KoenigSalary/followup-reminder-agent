@@ -347,28 +347,53 @@ def show_bulk_upload():
     except Exception as e:
         st.error(f"❌ Error reading file: {e}")
 
-    subject_col = owner_col = priority_col = due_date_col = remarks_col = cc_col = ""
+    st.markdown("### ✅ Selected Mapping (Debug)")
+    st.write({
+        "subject_col": subject_col,
+        "owner_col": owner_col,
+        "priority_col": priority_col,
+        "due_date_col": due_date_col,
+        "remarks_col": remarks_col,
+        "cc_col": cc_col
+    })
+
+    # Column mapping for Excel/CSV
     if df is not None:
         st.markdown("---")
         st.subheader("🔗 Column Mapping")
         st.markdown("Map your file columns to task fields:")
 
         cols = df.columns.tolist()
-        c1, c2, c3 = st.columns(3)
+        col1, col2, col3 = st.columns(3)
 
-        with c1:
+        with col1:
             subject_col = st.selectbox("Subject Column", [""] + cols, key="subject_col")
-            owner_col = st.selectbox("Owner Column", [""] + cols, key="owner_col")
+            owner_col   = st.selectbox("Owner Column", [""] + cols, key="owner_col")
 
-        with c2:
+        with col2:
             priority_col = st.selectbox("Priority Column", [""] + cols, key="priority_col")
             due_date_col = st.selectbox("Due Date Column", [""] + cols, key="due_date_col")
 
-        with c3:
+        with col3:
             remarks_col = st.selectbox("Remarks Column", [""] + cols, key="remarks_col")
-            cc_col = st.selectbox("CC Column", [""] + cols, key="cc_col")
+            cc_col      = st.selectbox("CC Column", [""] + cols, key="cc_col")
+
+        # ✅ DEBUG: show what was selected (so it never silently uses defaults)
+        st.markdown("### ✅ Selected Mapping (Debug)")
+        st.write({
+            "subject_col": subject_col,
+            "owner_col": owner_col,
+            "priority_col": priority_col,
+            "due_date_col": due_date_col,
+            "remarks_col": remarks_col,
+            "cc_col": cc_col
+        })
 
     st.markdown("---")
+
+    if df is not None and (not subject_col or not owner_col):
+        st.error("Please select at least Subject Column and Owner Column before processing.")
+        st.stop()
 
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
