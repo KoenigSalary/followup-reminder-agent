@@ -33,6 +33,45 @@ class ExcelHandler:
 
         self._ensure_file_exists()
 
+def add_task(self, task_data: dict) -> None:
+    """
+    Append one task row to the Excel file, ensuring required columns exist.
+    """
+    from openpyxl import load_workbook
+    from datetime import datetime
+
+    wb = load_workbook(self.excel_path)
+    ws = wb.active  # or wb["Tasks"] if you use a specific sheet name
+
+    # Read header row (assumes header in row 1)
+    headers = [cell.value for cell in ws[1] if cell.value is not None]
+
+    # If file exists but header is missing/empty, create header from required columns
+    if not headers:
+        headers = self.required_columns
+        ws.append(headers)
+
+    # Ensure all required columns exist in the sheet header
+    missing = [c for c in self.required_columns if c not in headers]
+    if missing:
+        headers = headers + missing
+        # Rewrite header row
+        for col_idx, col_name in enumerate(headers, start=1):
+            ws.cell(row=1, column=col_idx).value = col_name
+
+    # Auto-fill common fields if not provided
+    now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    task_data = dict(task_data)  # copy
+    task_data.setdefault("Created On", now_str)
+    task_data.setdefault("Last Updated", now_str)
+    task_data.setdefault("Auto Reply Sent", "")
+
+    # Build row in header order
+    row_values = [task_data.get(h, "") for h in headers]
+    ws.append(row_values)
+
+    wb.save(self.excel_path)
+
     # --------------------------------------------------
     # File handling
     # --------------------------------------------------
