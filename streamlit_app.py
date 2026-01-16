@@ -57,7 +57,12 @@ st.set_page_config(
 )
 
 # Debug (keep while fixing)
-st.write("ExcelHandler loaded from:", inspect.getfile(ExcelHandler))
+with st.sidebar:
+    debug_mode = st.toggle("🛠 Debug mode", value=False)
+
+if debug_mode:
+    st.info(f"ExcelHandler loaded from: {inspect.getfile(ExcelHandler)}")
+    st.info(f"openpyxl spec: {importlib.util.find_spec('openpyxl')}")
 
 # Custom CSS with logo shifted right
 st.markdown("""
@@ -219,7 +224,6 @@ def show_sidebar():
 
 
 def show_dashboard():
-    st.write("openpyxl spec:", importlib.util.find_spec("openpyxl"))
     from views.dashboard_analytics import render_dashboard
     excel_handler = get_excel_handler()
     if excel_handler:
@@ -264,7 +268,6 @@ def show_manual_entry():
 
 
 def show_bulk_upload():
-    st.write("openpyxl spec:", importlib.util.find_spec("openpyxl"))
 
     st.header("📂 Bulk MOM Upload")
     st.markdown("Upload Minutes of Meeting (MOM) files to extract and create multiple tasks at once.")
