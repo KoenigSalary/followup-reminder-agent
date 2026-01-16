@@ -380,15 +380,18 @@ def show_bulk_upload():
                 "remarks_col": remarks_col,
                 "cc_col": cc_col
             })
+            
+# ✅ Require mapping
+if not subject_col or not owner_col:
+    st.error("Please select at least Subject Column and Owner Column before processing.")
+    st.stop()
 
-        # ✅ Require mapping
-        if not subject_col or not owner_col:
-            st.error("Please select at least Subject Column and Owner Column before processing.")
-            st.stop()
+col1, col2, col3 = st.columns([1, 2, 1])
+with col2:
+    if st.button("🚀 Process and Create Tasks", use_container_width=True, type="primary"):
+        import pandas as pd
+        from datetime import datetime
 
-    col1, col2, col3 = st.columns([1, 2, 1])
-    with col2:
-        if st.button("🚀 Process and Create Tasks", use_container_width=True, type="primary"):
         def clean(v):
             if v is None:
                 return ""
@@ -404,12 +407,12 @@ def show_bulk_upload():
                 return pd.to_datetime(v, dayfirst=True).strftime("%Y-%m-%d")
             except Exception:
                 return datetime.now().strftime("%Y-%m-%d")
-  
-            excel_handler = get_excel_handler()
-            if not excel_handler:
-                st.error("❌ Could not initialize ExcelHandler")
-                return
 
+        excel_handler = get_excel_handler()
+        if not excel_handler:
+            st.error("❌ Could not initialize ExcelHandler")
+            return
+    
             created_count = 0
             try:
                 if df is not None:
