@@ -9,6 +9,7 @@ import pandas as pd
 from pathlib import Path
 import sys
 import importlib
+import inspect
 
 # Setup
 BASE_DIR = Path(__file__).resolve().parent
@@ -28,6 +29,8 @@ def ensure_registry_exists():
             "Created Date","Last Reminder Date","Remarks","CC"
         ])
         df.to_excel(REGISTRY_FILE, index=False)
+
+st.write("ExcelHandler loaded from:", inspect.getfile(ExcelHandler))
 
 def get_excel_handler_safe():
     try:
