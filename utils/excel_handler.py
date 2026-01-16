@@ -4,9 +4,10 @@ import pandas as pd
 from datetime import datetime
 import os
 import warnings
+import uuid
+from openpyxl import Workbook, load_workbook
 
 warnings.filterwarnings("ignore")
-
 
 class ExcelHandler:
     def __init__(self, excel_path: str):
@@ -33,54 +34,75 @@ class ExcelHandler:
 
         self._ensure_file_exists()
 
-def add_task(self, task_data: dict) -> None:
-    """
-    Append one task row to the Excel file, ensuring required columns exist.
-    """
-    from openpyxl import load_workbook
-    from datetime import datetime
-
-    wb = load_workbook(self.excel_path)
-    ws = wb.active  # or wb["Tasks"] if you use a specific sheet name
-
-    # Read header row (assumes header in row 1)
-    headers = [cell.value for cell in ws[1] if cell.value is not None]
-
-    # If file exists but header is missing/empty, create header from required columns
-    if not headers:
-        headers = self.required_columns
-        ws.append(headers)
-
-    # Ensure all required columns exist in the sheet header
-    missing = [c for c in self.required_columns if c not in headers]
-    if missing:
-        headers = headers + missing
-        # Rewrite header row
-        for col_idx, col_name in enumerate(headers, start=1):
-            ws.cell(row=1, column=col_idx).value = col_name
-
-    # Auto-fill common fields if not provided
-    now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    task_data = dict(task_data)  # copy
-    task_data.setdefault("Created On", now_str)
-    task_data.setdefault("Last Updated", now_str)
-    task_data.setdefault("Auto Reply Sent", "")
-
-    # Build row in header order
-    row_values = [task_data.get(h, "") for h in headers]
-    ws.append(row_values)
-
-    wb.save(self.excel_path)
-
     # --------------------------------------------------
     # File handling
     # --------------------------------------------------
     def _ensure_file_exists(self):
+        """
+       Create the Excel file if it doesn't exist, and ensure the header row
+        contains the required columns.
+        """
+
+        # Create workbook if missing
         if not os.path.exists(self.excel_path):
-            os.makedirs(os.path.dirname(self.excel_path), exist_ok=True)
-            pd.DataFrame(columns=self.required_columns).to_excel(
-                self.excel_path, index=False
-            )
+            wb = Workbook()
+            ws = wb.active
+            ws.title = "Tasks"
+            ws.append(self.required_columns)  # header row
+            wb.save(self.excel_path)
+            return
+
+    # If file exists, ensure required columns exist in header
+    wb = load_workbook(self.excel_path)
+    ws = wb["Tasks"] if "Tasks" in wb.sheetnames else wb.active
+
+    # Read header (row 1). If empty, write it.
+    header = [cell.value for cell in ws[1] if cell.value is not None]
+    if not header:
+        ws.append(self.required_columns)
+        wb.save(self.excel_path)
+        return
+
+    # Add any missing required columns to the header row
+    missing = [c for c in self.required_columns if c not in header]
+    if missing:
+        new_header = header + missing
+        for col_idx, col_name in enumerate(new_header, start=1):
+            ws.cell(row=1, column=col_idx).value = col_name
+        wb.save(self.excel_path)
+
+    def add_task(self, task_data: dict):
+
+        wb = load_workbook(self.excel_path)
+        ws = wb["Tasks"] if "Tasks" in wb.sheetnames else wb.active
+
+        headers = [cell.value for cell in ws[1] if cell.value is not None]
+        if not headers:
+            headers = self.required_columns
+            ws.append(headers)
+
+        now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+        # Fill required system fields if missing
+        task_data = dict(task_data)
+        task_data.setdefault("task_id", str(uuid.uuid4()))
+        task_data.setdefault("meeting_id", "")
+        task_data.setdefault("Created On", now_str)
+        task_data.setdefault("Last Updated", now_str)
+        task_data.setdefault("Last Reminder Date", "")
+        task_data.setdefault("Last Reminder On", "")
+        task_data.setdefault("Completed Date", "")
+        task_data.setdefault("Auto Reply Sent", "")
+
+        # Ensure all required columns exist
+        missing = [c for c in self.required_columns if c not in headers]
+        if missing:
+            headers = headers + missing
+            for col_idx, col_name in enumerate(headers, start=1):
+                ws.cell(row=1, column=col_idx).value = col_name
+
+        ws.append([task_data.get(h, "") for h in headers])
+        wb.save(self.excel_path)
 
     def load_data(self) -> pd.DataFrame:
         try:
