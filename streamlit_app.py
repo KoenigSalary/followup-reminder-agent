@@ -267,7 +267,6 @@ def get_excel_handler():
         return None
         
 def show_dashboard():
-    import importlib
     st.write("openpyxl spec:", importlib.util.find_spec("openpyxl"))
 
     from views.dashboard_analytics import render_dashboard
@@ -316,8 +315,11 @@ def show_manual_entry():
         st.exception(e)
 
 def show_bulk_upload():
+<<<<<<< Updated upstream
     st.write("openpyxl import:", importlib.util.find_spec("openpyxl"))
 
+=======
+>>>>>>> Stashed changes
     """Display Bulk MOM Upload page"""
     st.header("📂 Bulk MOM Upload")
     st.markdown("Upload Minutes of Meeting (MOM) files to extract and create multiple tasks at once.")

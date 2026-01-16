@@ -1,1 +1,20 @@
 2026-01-13 13:46:11,772 - INFO - 📅 Scheduled: Task reminders daily at 9:00 AM
+2026-01-14 09:06:13,330 - INFO - ⏰ Running Task Reminders at 2026-01-14 09:06:13
+2026-01-14 09:06:13,332 - INFO - ============================================================
+2026-01-14 09:06:14,365 - INFO - ================================================================================
+🔔 Task Reminder System V3 - Running
+📅 Date: 2026-01-14 09:06:14
+================================================================================
+📧 Email: praveen.chaudhary@koenig-solutions.com
+🔐 Password: ****************
+📂 Loaded registry: 31 rows
+📋 Columns: ['task_id', 'meeting_id', 'Owner', 'Subject', 'Status', 'Priority', 'Due Date', 'CC', 'Remarks', 'Created On', 'Last Updated', 'Last Reminder Date', 'Last Reminder On', 'Completed Date', 'Auto Reply Sent', 'last_reminder', 'days_taken', 'performance_rating']
+📂 Loaded team directory: 20 rows
+
+📊 Total tasks: 31
+📋 OPEN tasks: 0
+
+✅ No open tasks to remind!
+
+2026-01-14 09:06:14,365 - INFO - ✅ Task Reminders completed successfully
+2026-01-14 09:06:14,365 - INFO - ============================================================
