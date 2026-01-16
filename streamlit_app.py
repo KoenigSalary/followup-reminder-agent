@@ -387,8 +387,11 @@ if not subject_col or not owner_col:
     st.stop()
 
 col1, col2, col3 = st.columns([1, 2, 1])
-with col2: 
+with col2:
     if st.button("🚀 Process and Create Tasks", use_container_width=True, type="primary"):
+        import pandas as pd
+        from datetime import datetime
+
         def clean(v):
             if v is None:
                 return ""
@@ -408,43 +411,41 @@ with col2:
         excel_handler = get_excel_handler()
         if not excel_handler:
             st.error("❌ Could not initialize ExcelHandler")
-            return  # ✅ return must be INSIDE the if-block
+        else:
+            created_count = 0
+            try:
+                if df is not None:
+                    df = df.dropna(how="all")
 
-        created_count = 0
-        try:
-            if df is not None:
-                df = df.dropna(how="all")
+                    for idx, row in df.iterrows():
+                        owner_val = clean(row.get(owner_col)) if owner_col else ""
+                        subject_val = clean(row.get(subject_col)) if subject_col else ""
+                        priority_val = clean(row.get(priority_col)) if priority_col else ""
+                        remarks_val = clean(row.get(remarks_col)) if remarks_col else ""
+                        cc_val = clean(row.get(cc_col)) if cc_col else ""
 
-                for idx, row in df.iterrows():
-                    owner_val = clean(row.get(owner_col)) if owner_col else ""
-                    subject_val = clean(row.get(subject_col)) if subject_col else ""
-                    priority_val = clean(row.get(priority_col)) if priority_col else ""
-                    remarks_val = clean(row.get(remarks_col)) if remarks_col else ""
-                    cc_val = clean(row.get(cc_col)) if cc_col else ""
+                        if not owner_val and not subject_val and not remarks_val:
+                            continue
 
-                    # Skip empty lines
-                    if not owner_val and not subject_val and not remarks_val:
-                        continue
+                        task_data = {
+                            "Owner": owner_val or "Unassigned",
+                            "Subject": subject_val or f"Task {idx+1}",
+                            "Priority": priority_val or default_priority,
+                            "Status": default_status,
+                            "Due Date": parse_due_date(row.get(due_date_col)) if due_date_col else datetime.now().strftime("%Y-%m-%d"),
+                            "Remarks": remarks_val or f"Imported from {uploaded_file.name}",
+                            "CC": cc_val
+                        }
 
-                    task_data = {
-                        "Owner": owner_val or "Unassigned",
-                        "Subject": subject_val or f"Task {idx+1}",
-                        "Priority": priority_val or default_priority,
-                        "Status": default_status,
-                        "Due Date": parse_due_date(row.get(due_date_col)) if due_date_col else datetime.now().strftime("%Y-%m-%d"),
-                        "Remarks": remarks_val or f"Imported from {uploaded_file.name}",
-                        "CC": cc_val
-                    }
+                        excel_handler.add_task(task_data)
+                        created_count += 1
 
-                    excel_handler.add_task(task_data)
-                    created_count += 1
+                st.success(f"✅ Successfully created {created_count} tasks from {uploaded_file.name}")
+                st.balloons()
 
-            st.success(f"✅ Successfully created {created_count} tasks from {uploaded_file.name}")
-            st.balloons()
-
-        except Exception as e:
-            st.error(f"❌ Error processing file: {e}")
-            st.exception(e)
+            except Exception as e:
+                st.error(f"❌ Error processing file: {e}")
+                st.exception(e)
 
 def show_send_reminders():
     st.header("📧 Send Task Reminders")
