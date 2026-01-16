@@ -418,7 +418,7 @@ with col2:
                 if df is not None:
                     for idx, row in df.iterrows():
                         task_data = {
-                            "Owner": clean(row.get(owner_col)) or "Unassigned"
+                            "Owner": clean(row.get(owner_col)) or "Unassigned",
                             "Subject": row.get(subject_col, f"Task from {uploaded_file.name}") if subject_col else f"Task {idx+1}",
                             "Priority": row.get(priority_col, default_priority) if priority_col else default_priority,
                             "Status": default_status,
