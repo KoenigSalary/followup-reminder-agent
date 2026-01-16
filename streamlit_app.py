@@ -355,7 +355,7 @@ def show_bulk_upload():
         "remarks_col": remarks_col,
         "cc_col": cc_col
     })
-    # ✅ Default values so debug never crashes
+    # # ✅ Default values (must be BEFORE any debug use)
     subject_col = owner_col = priority_col = due_date_col = remarks_col = cc_col = ""
 
     # Column mapping for Excel/CSV
@@ -365,23 +365,23 @@ def show_bulk_upload():
         st.markdown("Map your file columns to task fields:")
 
         cols = df.columns.tolist()
-        col1, col2, col3 = st.columns(3)
+        c1, c2, c3 = st.columns(3)
 
-        with col1:
+        with c1:
             subject_col = st.selectbox("Subject Column", [""] + cols, key="subject_col")
             owner_col   = st.selectbox("Owner Column", [""] + cols, key="owner_col")
 
-        with col2:
+        with c2:
             priority_col = st.selectbox("Priority Column", [""] + cols, key="priority_col")
             due_date_col = st.selectbox("Due Date Column", [""] + cols, key="due_date_col")
 
-        with col3:
+        with c3:
             remarks_col = st.selectbox("Remarks Column", [""] + cols, key="remarks_col")
             cc_col      = st.selectbox("CC Column", [""] + cols, key="cc_col")
 
-        # ✅ DEBUG: show what was selected (so it never silently uses defaults)
+        # ✅ Debug only AFTER selectboxes define the variables
         st.markdown("### ✅ Selected Mapping (Debug)")
-        st.write({
+        st.json({
             "subject_col": subject_col,
             "owner_col": owner_col,
             "priority_col": priority_col,
@@ -390,7 +390,10 @@ def show_bulk_upload():
             "cc_col": cc_col
         })
 
-    st.markdown("---")
+    # ✅ Require mapping
+    if df is not None and (not subject_col or not owner_col):
+        st.error("Please select at least Subject Column and Owner Column before processing.")
+        st.stop()
 
     if df is not None and (not subject_col or not owner_col):
         st.error("Please select at least Subject Column and Owner Column before processing.")
