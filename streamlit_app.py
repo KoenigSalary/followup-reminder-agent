@@ -8,6 +8,7 @@ import streamlit as st
 import pandas as pd
 from pathlib import Path
 import sys
+import importlib
 
 # Setup
 BASE_DIR = Path(__file__).resolve().parent
@@ -315,8 +316,7 @@ def show_manual_entry():
         st.exception(e)
 
 def show_bulk_upload():
-import importlib
-st.write("openpyxl import:", importlib.util.find_spec("openpyxl"))
+    st.write("openpyxl import:", importlib.util.find_spec("openpyxl"))
 
     """Display Bulk MOM Upload page"""
     st.header("📂 Bulk MOM Upload")
