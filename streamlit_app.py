@@ -389,8 +389,22 @@ def show_bulk_upload():
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
         if st.button("🚀 Process and Create Tasks", use_container_width=True, type="primary"):
-            from datetime import datetime
+        def clean(v):
+            if v is None:
+                return ""
+            if isinstance(v, float) and pd.isna(v):
+                return ""
+            return str(v).strip()
 
+        def parse_due_date(v):
+            v = clean(v)
+            if not v:
+                return datetime.now().strftime("%Y-%m-%d")
+            try:
+                return pd.to_datetime(v, dayfirst=True).strftime("%Y-%m-%d")
+            except Exception:
+                return datetime.now().strftime("%Y-%m-%d")
+  
             excel_handler = get_excel_handler()
             if not excel_handler:
                 st.error("❌ Could not initialize ExcelHandler")
@@ -401,12 +415,12 @@ def show_bulk_upload():
                 if df is not None:
                     for idx, row in df.iterrows():
                         task_data = {
-                            "Owner": row.get(owner_col, "Unassigned") if owner_col else "Unassigned",
+                            "Owner": clean(row.get(owner_col)) or "Unassigned"
                             "Subject": row.get(subject_col, f"Task from {uploaded_file.name}") if subject_col else f"Task {idx+1}",
                             "Priority": row.get(priority_col, default_priority) if priority_col else default_priority,
                             "Status": default_status,
-                            "Due Date": row.get(due_date_col, datetime.now().strftime("%Y-%m-%d")) if due_date_col else datetime.now().strftime("%Y-%m-%d"),
-                            "Remarks": row.get(remarks_col, f"Imported from {uploaded_file.name}") if remarks_col else f"Imported from {uploaded_file.name}",
+                            "Due Date": parse_due_date(row.get(due_date_col)) if due_date_col else datetime.now().strftime("%Y-%m-%d")
+                            "Remarks": clean(row.get(remarks_col)) or f"Imported from {uploaded_file.name}"
                             "CC": row.get(cc_col, "") if cc_col else ""
                         }
                         excel_handler.add_task(task_data)
