@@ -9,11 +9,12 @@ from openpyxl import Workbook, load_workbook
 
 warnings.filterwarnings("ignore")
 
+
 class ExcelHandler:
     def __init__(self, excel_path: str):
         self.excel_path = excel_path
 
-        # ✅ UPDATED: Added task_id and meeting_id to required columns
+        # Required columns for registry
         self.required_columns = [
             "task_id",
             "meeting_id",
@@ -39,40 +40,48 @@ class ExcelHandler:
     # --------------------------------------------------
     def _ensure_file_exists(self):
         """
-       Create the Excel file if it doesn't exist, and ensure the header row
+        Create the Excel file if it doesn't exist, and ensure the header row
         contains the required columns.
         """
+        folder = os.path.dirname(self.excel_path)
+        if folder:
+            os.makedirs(folder, exist_ok=True)
 
         # Create workbook if missing
         if not os.path.exists(self.excel_path):
             wb = Workbook()
             ws = wb.active
             ws.title = "Tasks"
-            ws.append(self.required_columns)  # header row
+            ws.append(self.required_columns)  # header
             wb.save(self.excel_path)
             return
 
-    # If file exists, ensure required columns exist in header
-    wb = load_workbook(self.excel_path)
-    ws = wb["Tasks"] if "Tasks" in wb.sheetnames else wb.active
+        # If file exists, ensure required columns exist
+        wb = load_workbook(self.excel_path)
+        ws = wb["Tasks"] if "Tasks" in wb.sheetnames else wb.active
 
-    # Read header (row 1). If empty, write it.
-    header = [cell.value for cell in ws[1] if cell.value is not None]
-    if not header:
-        ws.append(self.required_columns)
-        wb.save(self.excel_path)
-        return
+        # If header row is empty, write it
+        header = [cell.value for cell in ws[1] if cell.value is not None]
+        if not header:
+            ws.append(self.required_columns)
+            wb.save(self.excel_path)
+            return
 
-    # Add any missing required columns to the header row
-    missing = [c for c in self.required_columns if c not in header]
-    if missing:
-        new_header = header + missing
-        for col_idx, col_name in enumerate(new_header, start=1):
-            ws.cell(row=1, column=col_idx).value = col_name
-        wb.save(self.excel_path)
+        missing = [c for c in self.required_columns if c not in header]
+        if missing:
+            new_header = header + missing
+            for col_idx, col_name in enumerate(new_header, start=1):
+                ws.cell(row=1, column=col_idx).value = col_name
+            wb.save(self.excel_path)
 
-    def add_task(self, task_data: dict):
-
+    # --------------------------------------------------
+    # Bulk upload helper
+    # --------------------------------------------------
+    def add_task(self, task_data: dict) -> None:
+        """
+        Append one task row to the registry.
+        task_data typically contains: Subject, Owner, CC, Due Date, Remarks, Priority, Status
+        """
         wb = load_workbook(self.excel_path)
         ws = wb["Tasks"] if "Tasks" in wb.sheetnames else wb.active
 
@@ -83,7 +92,6 @@ class ExcelHandler:
 
         now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-        # Fill required system fields if missing
         task_data = dict(task_data)
         task_data.setdefault("task_id", str(uuid.uuid4()))
         task_data.setdefault("meeting_id", "")
@@ -94,7 +102,7 @@ class ExcelHandler:
         task_data.setdefault("Completed Date", "")
         task_data.setdefault("Auto Reply Sent", "")
 
-        # Ensure all required columns exist
+        # Ensure required columns exist in sheet header
         missing = [c for c in self.required_columns if c not in headers]
         if missing:
             headers = headers + missing
@@ -104,19 +112,21 @@ class ExcelHandler:
         ws.append([task_data.get(h, "") for h in headers])
         wb.save(self.excel_path)
 
+    # --------------------------------------------------
+    # Read / write as DataFrame
+    # --------------------------------------------------
     def load_data(self) -> pd.DataFrame:
         try:
             if not os.path.exists(self.excel_path):
                 return pd.DataFrame(columns=self.required_columns)
 
-            df = pd.read_excel(self.excel_path)
+            df = pd.read_excel(self.excel_path, engine="openpyxl")
 
-            # ✅ Ensure all required columns exist
             for col in self.required_columns:
                 if col not in df.columns:
                     df[col] = None
 
-            return df
+            return df[self.required_columns]
 
         except Exception as e:
             print(f"❌ Excel load error: {e}")
@@ -124,14 +134,20 @@ class ExcelHandler:
 
     def save_data(self, df: pd.DataFrame) -> bool:
         try:
-            df.to_excel(self.excel_path, index=False)
+            # Ensure order
+            for col in self.required_columns:
+                if col not in df.columns:
+                    df[col] = None
+            df = df[self.required_columns]
+
+            df.to_excel(self.excel_path, index=False, engine="openpyxl")
             return True
         except Exception as e:
             print(f"❌ Excel save error: {e}")
             return False
 
     # --------------------------------------------------
-    # Create
+    # Create (manual entry)
     # --------------------------------------------------
     def add_entry(
         self,
@@ -141,44 +157,25 @@ class ExcelHandler:
         remarks: str = "",
         priority: str = "MEDIUM",
         cc: str = "",
-        task_id: str = None,  # ✅ NEW: Optional task_id
-        meeting_id: str = None  # ✅ NEW: Optional meeting_id
+        task_id: str = None,
+        meeting_id: str = None
     ):
-        """
-        Add a new task entry
-        
-        Args:
-            subject: Task subject/title
-            owner: Task owner name
-            due_date: Due date
-            remarks: Additional remarks
-            priority: Priority level (URGENT, HIGH, MEDIUM, LOW)
-            cc: CC recipients
-            task_id: Optional task ID (auto-generated if not provided)
-            meeting_id: Optional meeting ID (defaults to MANUAL if not provided)
-        """
-        
-        # ✅ Auto-generate task_id if not provided
         if not task_id:
             today = datetime.now()
             task_id_prefix = f"MAN-{today.strftime('%Y%m%d')}"
-            
             df = self.load_data()
-            
-            if len(df) > 0 and 'task_id' in df.columns:
-                today_manual_tasks = df[
-                    df['task_id'].astype(str).str.startswith(task_id_prefix, na=False)
-                ]
+
+            if len(df) > 0 and "task_id" in df.columns:
+                today_manual_tasks = df[df["task_id"].astype(str).str.startswith(task_id_prefix, na=False)]
                 next_seq = len(today_manual_tasks) + 1
             else:
                 next_seq = 1
-            
+
             task_id = f"{task_id_prefix}-{next_seq:03d}"
-        
-        # ✅ Set meeting_id
+
         if not meeting_id:
             meeting_id = f"MANUAL-{datetime.now().strftime('%Y%m%d')}"
-        
+
         row = {
             "task_id": task_id,
             "meeting_id": meeting_id,
@@ -189,12 +186,12 @@ class ExcelHandler:
             "Remarks": remarks,
             "Priority": priority,
             "Status": "OPEN",
-            "Created On": datetime.now(),
-            "Last Updated": datetime.now(),
-            "Last Reminder Date": None,
-            "Last Reminder On": None,
-            "Completed Date": None,
-            "Auto Reply Sent": None
+            "Created On": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "Last Updated": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "Last Reminder Date": "",
+            "Last Reminder On": "",
+            "Completed Date": "",
+            "Auto Reply Sent": ""
         }
         return self.append_row(row)
 
@@ -208,7 +205,6 @@ class ExcelHandler:
         df = self.load_data()
         new_df = pd.DataFrame(rows)
 
-        # ✅ Ensure all required columns exist in new rows
         for col in self.required_columns:
             if col not in new_df.columns:
                 new_df[col] = None
@@ -219,12 +215,11 @@ class ExcelHandler:
         return len(combined)
 
     # --------------------------------------------------
-    # Update (INDEX-BASED — UI SAFE)
+    # Update (index-based)
     # --------------------------------------------------
     def update_row(self, index: int, updates: dict) -> bool:
         try:
             df = self.load_data()
-
             if index < 0 or index >= len(df):
                 return False
 
@@ -232,7 +227,7 @@ class ExcelHandler:
                 if col in df.columns:
                     df.at[index, col] = val
 
-            df.at[index, "Last Updated"] = datetime.now()
+            df.at[index, "Last Updated"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             self.save_data(df)
             return True
 
@@ -243,9 +238,6 @@ class ExcelHandler:
     def update_status(self, index: int, status: str) -> bool:
         return self.update_row(index, {"Status": status})
 
-    # --------------------------------------------------
-    # Soft delete (SAFE)
-    # --------------------------------------------------
     def delete_row(self, index: int) -> bool:
         return self.update_row(index, {"Status": "DELETED"})
 
