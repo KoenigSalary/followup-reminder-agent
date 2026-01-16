@@ -315,11 +315,8 @@ def show_manual_entry():
         st.exception(e)
 
 def show_bulk_upload():
-<<<<<<< Updated upstream
     st.write("openpyxl import:", importlib.util.find_spec("openpyxl"))
 
-=======
->>>>>>> Stashed changes
     """Display Bulk MOM Upload page"""
     st.header("📂 Bulk MOM Upload")
     st.markdown("Upload Minutes of Meeting (MOM) files to extract and create multiple tasks at once.")
