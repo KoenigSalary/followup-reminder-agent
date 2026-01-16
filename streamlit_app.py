@@ -267,11 +267,13 @@ def show_manual_entry():
         st.exception(e)
 
 def show_bulk_upload():
-
     st.header("📂 Bulk MOM Upload")
     st.markdown("Upload Minutes of Meeting (MOM) files to extract and create multiple tasks at once.")
     st.markdown("---")
 
+    # ✅ DECLARE VARIABLES AT THE TOP with default values
+    subject_col = owner_col = priority_col = due_date_col = remarks_col = cc_col = ""
+    
     uploaded_file = st.file_uploader(
         "Choose a file",
         type=['xlsx', 'xls', 'csv', 'txt', 'pdf', 'docx'],
@@ -346,18 +348,6 @@ def show_bulk_upload():
     except Exception as e:
         st.error(f"❌ Error reading file: {e}")
 
-    st.markdown("### ✅ Selected Mapping (Debug)")
-    st.write({
-        "subject_col": subject_col,
-        "owner_col": owner_col,
-        "priority_col": priority_col,
-        "due_date_col": due_date_col,
-        "remarks_col": remarks_col,
-        "cc_col": cc_col
-    })
-    # # ✅ Default values (must be BEFORE any debug use)
-    subject_col = owner_col = priority_col = due_date_col = remarks_col = cc_col = ""
-
     # Column mapping for Excel/CSV
     if df is not None:
         st.markdown("---")
@@ -369,7 +359,7 @@ def show_bulk_upload():
 
         with c1:
             subject_col = st.selectbox("Subject Column", [""] + cols, key="subject_col")
-            owner_col   = st.selectbox("Owner Column", [""] + cols, key="owner_col")
+            owner_col = st.selectbox("Owner Column", [""] + cols, key="owner_col")
 
         with c2:
             priority_col = st.selectbox("Priority Column", [""] + cols, key="priority_col")
@@ -377,27 +367,24 @@ def show_bulk_upload():
 
         with c3:
             remarks_col = st.selectbox("Remarks Column", [""] + cols, key="remarks_col")
-            cc_col      = st.selectbox("CC Column", [""] + cols, key="cc_col")
+            cc_col = st.selectbox("CC Column", [""] + cols, key="cc_col")
 
-        # ✅ Debug only AFTER selectboxes define the variables
-        st.markdown("### ✅ Selected Mapping (Debug)")
-        st.json({
-            "subject_col": subject_col,
-            "owner_col": owner_col,
-            "priority_col": priority_col,
-            "due_date_col": due_date_col,
-            "remarks_col": remarks_col,
-            "cc_col": cc_col
-        })
+        # ✅ Debug section MOVED INSIDE the condition where variables are defined
+        if debug_mode:  # Only show debug if debug_mode is True
+            st.markdown("### ✅ Selected Mapping (Debug)")
+            st.json({
+                "subject_col": subject_col,
+                "owner_col": owner_col,
+                "priority_col": priority_col,
+                "due_date_col": due_date_col,
+                "remarks_col": remarks_col,
+                "cc_col": cc_col
+            })
 
-    # ✅ Require mapping
-    if df is not None and (not subject_col or not owner_col):
-        st.error("Please select at least Subject Column and Owner Column before processing.")
-        st.stop()
-
-    if df is not None and (not subject_col or not owner_col):
-        st.error("Please select at least Subject Column and Owner Column before processing.")
-        st.stop()
+        # ✅ Require mapping
+        if not subject_col or not owner_col:
+            st.error("Please select at least Subject Column and Owner Column before processing.")
+            st.stop()
 
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
@@ -439,7 +426,6 @@ def show_bulk_upload():
             except Exception as e:
                 st.error(f"❌ Error processing file: {e}")
                 st.exception(e)
-
 
 def show_send_reminders():
     st.header("📧 Send Task Reminders")
