@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 #!/usr/bin/env python3
 """
 Task Reminder System V3 - FIXED VERSION
@@ -8,28 +9,36 @@ import pandas as pd
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
-from datetime import datetime, timedelta
+from datetime import datetime
 from pathlib import Path
 import sys
 import os
-from dotenv import load_dotenv
 
 # Add project root to path
 BASE_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(BASE_DIR))
 
 # Load environment variables
+from dotenv import load_dotenv
 load_dotenv(BASE_DIR / '.env')
 
-# Email configuration from .env
-SMTP_SERVER = os.getenv('SMTP_SERVER', 'smtp.office365.com')
-SMTP_PORT = int(os.getenv('SMTP_PORT', 587))
-SMTP_USERNAME = os.getenv('SMTP_USERNAME')
-SMTP_PASSWORD = os.getenv('CEO_AGENT_EMAIL_PASSWORD')
-AGENT_SENDER_EMAIL = os.getenv('AGENT_SENDER_EMAIL', SMTP_USERNAME)
+def _get_secret(key: str, default=None):
+    """Read from OS env first, then Streamlit secrets (Cloud)."""
+    val = os.getenv(key)
+    if val is not None and str(val).strip() != "":
+        return val
+    try:
+        import streamlit as st
+        return st.secrets.get(key, default)
+    except Exception:
+        return default
 
-# Import user lookup
-from utils.user_lookup import find_user_email
+# Email configuration
+SMTP_SERVER = _get_secret('SMTP_SERVER', 'smtp.office365.com')
+SMTP_PORT = int(_get_secret('SMTP_PORT', 587))
+SMTP_USERNAME = _get_secret('SMTP_USERNAME')
+SMTP_PASSWORD = _get_secret('CEO_AGENT_EMAIL_PASSWORD')
+AGENT_SENDER_EMAIL = _get_secret('AGENT_SENDER_EMAIL', SMTP_USERNAME)
 
 # File paths
 REGISTRY_FILE = BASE_DIR / "data" / "tasks_registry.xlsx"
@@ -37,10 +46,10 @@ TEAM_FILE = BASE_DIR / "data" / "Team_Directory.xlsx"
 
 # Priority-based reminder frequency (days)
 REMINDER_FREQUENCY = {
-    'URGENT': 1,   # Daily
-    'HIGH': 2,     # Every 2 days
-    'MEDIUM': 3,   # Every 3 days
-    'LOW': 5       # Every 5 days
+    'URGENT': 1,
+    'HIGH': 2,
+    'MEDIUM': 3,
+    'LOW': 5
 }
 
 def load_team_directory():
@@ -54,148 +63,20 @@ def load_team_directory():
         print(f"⚠️  Could not load team directory: {e}")
     return None
 
-def load_registry():
-    """Load task registry"""
-    try:
-        df = pd.read_excel(REGISTRY_FILE)
-        print(f"📂 Loaded registry: {len(df)} rows")
-        print(f"📋 Columns: {df.columns.tolist()}")
-        return df
-    except Exception as e:
-        print(f"❌ Error loading registry: {e}")
-        return None
-
-def send_reminders():
-    """
-    Main reminder logic for sending task reminders.
-    Reads tasks from Excel and sends emails to owners.
-    """
-    from pathlib import Path
-    from utils.excel_handler import ExcelHandler
+def find_user_email(owner_name, team_df=None):
+    """Find user email from team directory or construct default"""
+    if team_df is not None and not team_df.empty:
+        try:
+            match = team_df[team_df['Name'].str.contains(owner_name, case=False, na=False)]
+            if not match.empty:
+                email = match.iloc[0].get('Email')
+                if email and '@' in str(email):
+                    return str(email).strip()
+        except Exception:
+            pass
     
-    BASE_DIR = Path(__file__).resolve().parent
-    REGISTRY_FILE = BASE_DIR / "data" / "tasks_registry.xlsx"
-    
-    if not REGISTRY_FILE.exists():
-        return "❌ Registry file not found"
-    
-    excel_handler = ExcelHandler(str(REGISTRY_FILE))
-    df = excel_handler.load_data()
-    
-    if df.empty:
-        return "No tasks found in registry"
-    
-    sent_count = 0
-    skipped_count = 0
-    
-    for idx, row in df.iterrows():
-        task = row.to_dict()
-        
-        # Must be OPEN/PENDING/IN PROGRESS
-        status = str(task.get('Status', '')).strip().upper()
-        if status not in ['OPEN', 'PENDING', 'IN PROGRESS']:
-            skipped_count += 1
-            continue
-        
-        # Get priority
-        priority = str(task.get('Priority', 'MEDIUM')).strip().upper()
-        if priority not in REMINDER_FREQUENCY:
-            priority = 'MEDIUM'
-        
-        # Check last reminder date
-        last_reminder = task.get('Last Reminder Date') or task.get('Last Reminder On')
-        
-        should_send = False
-        if pd.isna(last_reminder) or not last_reminder:
-            # Never sent - send now
-            should_send = True
-        else:
-            # Check if enough days have passed
-            try:
-                if isinstance(last_reminder, str):
-                    last_date = pd.to_datetime(last_reminder).date()
-                else:
-                    last_date = last_reminder.date() if hasattr(last_reminder, 'date') else last_reminder
-                
-                days_since = (datetime.now().date() - last_date).days
-                frequency = REMINDER_FREQUENCY[priority]
-                
-                should_send = days_since >= frequency
-                
-            except Exception as e:
-                print(f"   ⚠️  Error checking reminder date: {e}")
-                should_send = True  # Send if can't determine
-        
-        if should_send:
-            try:
-                # Send email (you need to implement send_email_reminder)
-                owner = str(task.get('Owner', '')).strip()
-                subject = str(task.get('Subject', '')).strip()
-                
-                if owner and owner.lower() != 'unassigned':
-                    # Call your email sending function here
-                    # send_email_reminder(task)
-                    
-                    # Update last reminder date
-                    excel_handler.update_row(idx, {
-                        'Last Reminder Date': datetime.now().strftime('%Y-%m-%d'),
-                        'Last Reminder On': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-                    })
-                    sent_count += 1
-                    print(f"✅ Sent reminder to {owner} for: {subject}")
-                else:
-                    skipped_count += 1
-            except Exception as e:
-                print(f"❌ Error sending reminder: {e}")
-                skipped_count += 1
-        else:
-            skipped_count += 1
-    
-    return f"Sent {sent_count} reminders, skipped {skipped_count} tasks"
-
-def send_email(to_email, cc_emails, subject, body, task_id):
-    """Send email with proper error handling"""
-    try:
-        # Validate SMTP credentials
-        if not SMTP_USERNAME or not SMTP_PASSWORD:
-            print(f"   ❌ SMTP credentials not configured in .env")
-            return False
-        
-        # Create message
-        msg = MIMEMultipart('alternative')
-        msg['From'] = AGENT_SENDER_EMAIL or SMTP_USERNAME
-        msg['To'] = to_email  # Single email address
-        msg['Subject'] = subject
-        
-        # Add CC if present
-        if cc_emails and isinstance(cc_emails, list) and len(cc_emails) > 0:
-            # Filter out empty strings and validate emails
-            valid_cc = [email.strip() for email in cc_emails if email and '@' in str(email)]
-            if valid_cc:
-                msg['Cc'] = ', '.join(valid_cc)
-        
-        # Attach body
-        msg.attach(MIMEText(body, 'html'))
-        
-        # Send email
-        with smtplib.SMTP(SMTP_SERVER, SMTP_PORT) as server:
-            server.starttls()
-            server.login(SMTP_USERNAME, SMTP_PASSWORD)
-            
-            # Build recipient list (To + CC)
-            recipients = [to_email]
-            if 'Cc' in msg:
-                recipients.extend([email.strip() for email in msg['Cc'].split(',')])
-            
-            # Send to all recipients
-            server.sendmail(SMTP_USERNAME, recipients, msg.as_string())
-        
-        print(f"   ✅ Sent reminder to {to_email} ({task_id})")
-        return True
-        
-    except Exception as e:
-        print(f"   ❌ Failed to send to {to_email}: {e}")
-        return False
+    # Fallback: construct email
+    return f"{owner_name.lower().replace(' ', '.')}@koenig-solutions.com"
 
 def create_email_body(task):
     """Create HTML email body"""
@@ -213,7 +94,7 @@ def create_email_body(task):
                 due_date = pd.to_datetime(due_date).strftime('%d-%b-%Y')
             else:
                 due_date = due_date.strftime('%d-%b-%Y')
-        except:
+        except Exception:
             pass
     
     # Priority color
@@ -236,150 +117,165 @@ def create_email_body(task):
         <p>Dear <strong>{owner}</strong>,</p>
         
         <p>This is a reminder for the following task assigned to you:</p>
-            
-            <table style="width: 100%; border-collapse: collapse; margin: 20px 0;">
-                <tr style="background-color: #f5f5f5;">
-                    <td style="padding: 10px; border: 1px solid #ddd; width: 30%; font-weight: bold;">Task ID:</td>
-                    <td style="padding: 10px; border: 1px solid #ddd;">{task_id}</td>
-                </tr>
-                <tr>
-                    <td style="padding: 10px; border: 1px solid #ddd; font-weight: bold;">Subject:</td>
-                    <td style="padding: 10px; border: 1px solid #ddd;">{subject}</td>
-                </tr>
-                <tr style="background-color: #f5f5f5;">
-                    <td style="padding: 10px; border: 1px solid #ddd; font-weight: bold;">Priority:</td>
-                    <td style="padding: 10px; border: 1px solid #ddd;">
-                        <span style="background-color: {priority_color}; 
-                                     color: white; padding: 4px 12px; border-radius: 4px; font-weight: bold;">
-                            {priority}
-                        </span>
-                    </td>
-                </tr>
-                <tr>
-                    <td style="padding: 10px; border: 1px solid #ddd; font-weight: bold;">Due Date:</td>
-                    <td style="padding: 10px; border: 1px solid #ddd;">{due_date}</td>
-                </tr>
-            </table>
-            
-            {f'<p><strong>Remarks:</strong> {remarks}</p>' if remarks and not pd.isna(remarks) else ''}
-            
-            <p style="margin-top: 20px;">
-                <strong>Action Required:</strong> Please provide an update on this task at your earliest convenience.
-            </p>
-            
-            <p style="color: #666; font-size: 12px; margin-top: 30px; padding-top: 20px; border-top: 1px solid #ddd;">
-                This is an automated reminder from the Follow-up & Reminder Team.<br>
-                © 2026 Koenig Solutions
-            </p>
-        </div>
-    </body>
-    </html>
-    """
+        
+        <table style="width: 100%; border-collapse: collapse; margin: 20px 0;">
+            <tr style="background-color: #f5f5f5;">
+                <td style="padding: 10px; border: 1px solid #ddd; width: 30%; font-weight: bold;">Task ID:</td>
+                <td style="padding: 10px; border: 1px solid #ddd;">{task_id}</td>
+            </tr>
+            <tr>
+                <td style="padding: 10px; border: 1px solid #ddd; font-weight: bold;">Subject:</td>
+                <td style="padding: 10px; border: 1px solid #ddd;">{subject}</td>
+            </tr>
+            <tr style="background-color: #f5f5f5;">
+                <td style="padding: 10px; border: 1px solid #ddd; font-weight: bold;">Priority:</td>
+                <td style="padding: 10px; border: 1px solid #ddd;">
+                    <span style="background-color: {priority_color}; color: white; padding: 4px 12px; border-radius: 4px; font-weight: bold;">
+                        {priority}
+                    </span>
+                </td>
+            </tr>
+            <tr>
+                <td style="padding: 10px; border: 1px solid #ddd; font-weight: bold;">Due Date:</td>
+                <td style="padding: 10px; border: 1px solid #ddd;">{due_date}</td>
+            </tr>
+        </table>
+        
+        {f'<p><strong>Remarks:</strong> {remarks}</p>' if remarks and not pd.isna(remarks) else ''}
+        
+        <p style="margin-top: 20px;">
+            <strong>Action Required:</strong> Please provide an update on this task at your earliest convenience.
+        </p>
+        
+        <p style="color: #666; font-size: 12px; margin-top: 30px; padding-top: 20px; border-top: 1px solid #ddd;">
+            This is an automated reminder from the Follow-up & Reminder Team.<br>
+            © 2026 Koenig Solutions
+        </p>
+    </div>
+</body>
+</html>
+"""
     return html
 
-def update_reminder_date(task_id):
-    """Update Last Reminder Date in registry"""
+def send_email(to_email, cc_emails, subject, body, task_id):
+    """Send email with proper error handling"""
     try:
-        df = pd.read_excel(REGISTRY_FILE)
+        if not SMTP_USERNAME or not SMTP_PASSWORD:
+            print(f"   ❌ SMTP credentials not configured")
+            return False
         
-        # Find task
-        mask = df['task_id'] == task_id
-        if mask.any():
-            # Update both possible columns
-            if 'Last Reminder Date' in df.columns:
-                df.loc[mask, 'Last Reminder Date'] = datetime.now().strftime('%Y-%m-%d')
-            if 'Last Reminder On' in df.columns:
-                df.loc[mask, 'Last Reminder On'] = datetime.now().strftime('%Y-%m-%d')
+        msg = MIMEMultipart('alternative')
+        msg['From'] = AGENT_SENDER_EMAIL or SMTP_USERNAME
+        msg['To'] = to_email
+        msg['Subject'] = subject
+        
+        if cc_emails and isinstance(cc_emails, list):
+            valid_cc = [email.strip() for email in cc_emails if email and '@' in str(email)]
+            if valid_cc:
+                msg['Cc'] = ', '.join(valid_cc)
+        
+        msg.attach(MIMEText(body, 'html'))
+        
+        with smtplib.SMTP(SMTP_SERVER, SMTP_PORT) as server:
+            server.starttls()
+            server.login(SMTP_USERNAME, SMTP_PASSWORD)
             
-            # Save
-            df.to_excel(REGISTRY_FILE, index=False)
-            return True
+            recipients = [to_email]
+            if 'Cc' in msg:
+                recipients.extend([e.strip() for e in msg['Cc'].split(',')])
+            
+            server.sendmail(SMTP_USERNAME, recipients, msg.as_string())
+        
+        print(f"   ✅ Sent to {to_email} ({task_id})")
+        return True
+        
     except Exception as e:
-        print(f"   ⚠️  Could not update reminder date: {e}")
-    return False
+        print(f"   ❌ Failed to send to {to_email}: {e}")
+        return False
 
-def main():
-    """Main execution"""
-    print("=" * 80)
-    print("🔔 Task Reminder System V3 - Running")
-    print(f"📅 Date: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-    print("=" * 80)
+def send_reminders():
+    """Main reminder logic for sending task reminders."""
+    from utils.excel_handler import ExcelHandler
     
-    # Check SMTP config
-    if not SMTP_USERNAME or not SMTP_PASSWORD:
-        print("❌ ERROR: SMTP credentials not configured!")
-        print("   Please set SMTP_USERNAME and CEO_AGENT_EMAIL_PASSWORD in .env file")
-        return
+    if not REGISTRY_FILE.exists():
+        return "❌ Registry file not found"
     
-    print(f"📧 Email: {SMTP_USERNAME}")
-    print(f"🔐 Password: {'*' * len(SMTP_PASSWORD) if SMTP_PASSWORD else 'NOT SET'}")
+    excel_handler = ExcelHandler(str(REGISTRY_FILE))
+    df = excel_handler.load_data()
     
-    # Load data
-    df = load_registry()
-    if df is None:
-        print("❌ Cannot proceed without task registry")
-        return
+    if df.empty:
+        return "No tasks found in registry"
     
     team_df = load_team_directory()
-    
-    # Get OPEN tasks
-    open_tasks = df[df['Status'].str.upper().isin(['OPEN', 'PENDING', 'IN PROGRESS'])]
-    print(f"\n📊 Total tasks: {len(df)}")
-    print(f"📋 OPEN tasks: {len(open_tasks)}")
-    
-    if len(open_tasks) == 0:
-        print("\n✅ No open tasks to remind!")
-        return
-    
-    # Send reminders
     sent_count = 0
     skipped_count = 0
     
-    for idx, task in open_tasks.iterrows():
-        task_id = task.get('task_id', 'N/A')
-        owner = task.get('Owner', '')
-        priority = task.get('Priority', 'MEDIUM')
+    for idx, row in df.iterrows():
+        task = row.to_dict()
         
-        print(f"\n🔍 Task: {task_id}")
-        print(f"   Owner: {owner} | Priority: {priority}")
-        
-        # Check if should send
-        if not should_send_reminder(task, team_df):
-            print(f"   ⏭️  Skipping (too soon)")
+        status = str(task.get('Status', '')).strip().upper()
+        if status not in ['OPEN', 'PENDING', 'IN PROGRESS']:
             skipped_count += 1
             continue
         
-        # Get owner email
-        owner_email = find_user_email(owner, team_df)
-        if not owner_email:
-            print(f"   ❌ No email found for {owner}")
-            skipped_count += 1
-            continue
+        priority = str(task.get('Priority', 'MEDIUM')).strip().upper()
+        if priority not in REMINDER_FREQUENCY:
+            priority = 'MEDIUM'
         
-        # Parse CC emails
-        cc_emails = []
-        cc_field = task.get('CC', '')
-        if cc_field and not pd.isna(cc_field):
-            # Split by comma or semicolon and validate
-            cc_list = str(cc_field).replace(';', ',').split(',')
-            cc_emails = [email.strip() for email in cc_list if email.strip() and '@' in email.strip()]
+        last_reminder = task.get('Last Reminder Date') or task.get('Last Reminder On')
         
-        # Create email
-        subject = f"⏰ Task Reminder: {task.get('Subject', 'No subject')}"
-        body = create_email_body(task)
+        should_send = False
+        if pd.isna(last_reminder) or not last_reminder:
+            should_send = True
+        else:
+            try:
+                if isinstance(last_reminder, str):
+                    last_date = pd.to_datetime(last_reminder).date()
+                else:
+                    last_date = last_reminder.date() if hasattr(last_reminder, 'date') else last_reminder
+                
+                days_since = (datetime.now().date() - last_date).days
+                frequency = REMINDER_FREQUENCY[priority]
+                should_send = days_since >= frequency
+                
+            except Exception as e:
+                print(f"   ⚠️  Error checking date: {e}")
+                should_send = True
         
-        # Send email
-        if send_email(owner_email, cc_emails, subject, body, task_id):
-            sent_count += 1
-            update_reminder_date(task_id)
+        if should_send:
+            try:
+                owner = str(task.get('Owner', '')).strip()
+                subject_text = str(task.get('Subject', '')).strip()
+                
+                if owner and owner.lower() != 'unassigned':
+                    owner_email = find_user_email(owner, team_df)
+                    
+                    cc_field = task.get('CC', '')
+                    cc_emails = []
+                    if cc_field and not pd.isna(cc_field):
+                        cc_list = str(cc_field).replace(';', ',').split(',')
+                        cc_emails = [e.strip() for e in cc_list if e.strip() and '@' in e.strip()]
+                    
+                    email_subject = f"\u23f0 Task Reminder: {subject_text}"
+                    email_body = create_email_body(task)
+                    
+                    if send_email(owner_email, cc_emails, email_subject, email_body, task.get('task_id', 'N/A')):
+                        excel_handler.update_row(idx, {
+                            'Last Reminder Date': datetime.now().strftime('%Y-%m-%d'),
+                            'Last Reminder On': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                        })
+                        sent_count += 1
+                    else:
+                        skipped_count += 1
+                else:
+                    skipped_count += 1
+            except Exception as e:
+                print(f"❌ Error sending: {e}")
+                skipped_count += 1
         else:
             skipped_count += 1
     
-    # Summary
-    print("\n" + "=" * 80)
-    print(f"📧 Sent: {sent_count} | ⏭️ Skipped: {skipped_count}")
-    print("=" * 80)
+    return f"Sent {sent_count} reminders, skipped {skipped_count} tasks"
 
 if __name__ == "__main__":
-    # this only runs when called directly (python run_reminders.py)
     print(send_reminders())
