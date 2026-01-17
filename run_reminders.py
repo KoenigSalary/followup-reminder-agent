@@ -65,8 +65,8 @@ def load_registry():
         print(f"❌ Error loading registry: {e}")
         return None
 
-def should_send_reminder(task, team_df):
-    """Check if reminder should be sent for this task"""
+def send_reminders():
+    """Main reminder logic"""for this task"""
     # Must be OPEN
     status = str(task.get('Status', '')).strip().upper()
     if status not in ['OPEN', 'PENDING', 'IN PROGRESS']:
@@ -328,4 +328,5 @@ def main():
     print("=" * 80)
 
 if __name__ == "__main__":
-    main()
+    # this only runs when called directly (python run_reminders.py)
+    print(send_reminders())
