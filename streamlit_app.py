@@ -36,7 +36,6 @@ def ensure_registry_exists():
         ])
         df.to_excel(REGISTRY_FILE, index=False)
 
-
 def get_excel_handler():
     """Get ExcelHandler with correct path (Cloud-safe)."""
     try:
@@ -46,7 +45,6 @@ def get_excel_handler():
     except Exception as e:
         st.error(f"❌ Error initializing ExcelHandler: {e}")
         return None
-
 
 # Page config
 st.set_page_config(
@@ -372,8 +370,6 @@ def show_bulk_upload():
             st.stop()
 
     # ---- Helpers ----
-    from datetime import datetime
-
     def clean(v):
         if v is None:
             return ""
@@ -467,20 +463,12 @@ def show_send_reminders():
     if st.button("📤 Send Reminders Now", type="primary", use_container_width=True):
         with st.spinner("Sending reminders..."):
             try:
-                import subprocess
-                result = subprocess.run(
-                    ["python3", str(BASE_DIR / "run_reminders.py")],
-                    capture_output=True,
-                    text=True
-                )
-                st.text(result.stdout)
-                if result.returncode == 0:
-                    st.success("✅ Reminders sent successfully!")
-                else:
-                    st.error(f"❌ Error: {result.stderr}")
+                from run_reminders import send_reminders
+                result_msg = send_reminders()
+                st.success(f"✅ {result_msg}")
             except Exception as e:
                 st.error(f"❌ Error: {e}")
-
+                st.exception(e)
 
 def show_settings():
     try:
