@@ -177,7 +177,7 @@ def create_email_body(task):
     <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
         <div style="max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #ddd; border-radius: 8px;">
             <h2 style="color: #d32f2f; border-bottom: 2px solid #d32f2f; padding-bottom: 10px;">
-            ⏰ Task Reminder
+    ⏰ Task Reminder
             </h2>
             
             <p>Dear <strong>{owner}</strong>,</p>
