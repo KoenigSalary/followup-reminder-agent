@@ -19,10 +19,26 @@ from config import (
 
 load_dotenv()  # harmless locally, ignored in cloud
 
-SMTP_PASSWORD = os.getenv("CEO_AGENT_EMAIL_PASSWORD")
+def _get_smtp_password():
+    """Get SMTP password from environment or Streamlit secrets."""
+    try:
+        import streamlit as st
+        password = st.secrets.get("EMAIL_PASSWORD_ENV_KEY")
+        if password:
+            return password
+    except Exception:
+        pass
+    
+    password = os.getenv("CEO_AGENT_EMAIL_PASSWORD")
+    if not password:
+        raise EnvironmentError(
+            "Email password not configured. Please set 'CEO_AGENT_EMAIL_PASSWORD' "
+            "environment variable or configure in Streamlit secrets."
+        )
+    return password
 
-if not SMTP_PASSWORD:
-    raise EnvironmentError("Environment variable 'CEO_AGENT_EMAIL_PASSWORD' not set")
+# Call this function when needed, not at module import
+SMTP_PASSWORD = None  # Initialize as None
 
 class EmailProcessor:
     def __init__(self):
