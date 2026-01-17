@@ -1,85 +1,38 @@
 import os
 from pathlib import Path
-import pandas as pd
 
-# -------------------------------------------------
-# App Settings
-# -------------------------------------------------
-APP_TITLE = "Follow-up & Reminder Agent"
-
-# -------------------------------------------------
-# Base Directory (works locally + on Streamlit Cloud)
-# -------------------------------------------------
-BASE_DIR = Path(__file__).resolve().parent
-
-# -------------------------------------------------
-# Data / Excel Configuration
-# -------------------------------------------------
-DATA_DIR = BASE_DIR / "data"
-
-# ✅ FIXED: Use tasks_registry.xlsx as the main file
-EXCEL_FILE_PATH = DATA_DIR / "tasks_registry.xlsx"
-TASK_FILE = DATA_DIR / "tasks_registry.xlsx"
-
-# For email reply tracking (separate file)
-EMAIL_REPLY_FILE = DATA_DIR / "auto_reply_sent.xlsx"
-
-# -------------------------------------------------
-# Email Configuration (STANDARDIZED)
-# -------------------------------------------------
-DEFAULT_EMAIL = "praveen.chaudhary@koenig-solutions.com"
-
-EMAIL_SENDER = DEFAULT_EMAIL
-EMAIL_RECEIVER = DEFAULT_EMAIL
-
-SMTP_SERVER = "smtp.office365.com"
-SMTP_PORT = 587
-
-SMTP_USERNAME = DEFAULT_EMAIL
-
-# ❗ Password must come from environment / Streamlit secrets
-EMAIL_PASSWORD_ENV_KEY = "CEO_AGENT_EMAIL_PASSWORD"
-
-SENDER_NAME = "Praveen Chaudhary"
-
-# -------------------------------------------------
-# Validation (Cloud-safe)
-# -------------------------------------------------
-def validate_paths():
-    DATA_DIR.mkdir(parents=True, exist_ok=True)
-
-    # Create tasks_registry.xlsx if missing
-    if not TASK_FILE.exists():
-        task_df = pd.DataFrame(
-            columns=[
-                "task_id",
-                "meeting_id",
-                "owner",
-                "task_text",
-                "status",
-                "created_on",
-                "last_reminder_on",
-                "last_reminder",
-                "last_reminder_date",
-                "priority",
-                "deadline",
-                "completed_date",
-                "days_taken",
-                "performance_rating",
-                "cc"
-            ]
-        )
-        task_df.to_excel(TASK_FILE, index=False)
+class Config:
+    """Centralized configuration management."""
     
-    # Create email reply tracking file if missing
-    if not EMAIL_REPLY_FILE.exists():
-        email_df = pd.DataFrame(
-            columns=[
-                "Auto Reply Sent",
-                "Meaning",
-                "Action",
-                "Message ID",
-                "Received Date"
-            ]
-        )
-        email_df.to_excel(EMAIL_REPLY_FILE, index=False)
+    def __init__(self):
+        self._load_config()
+    
+    def _load_config(self):
+        """Load configuration from various sources."""
+        # Try Streamlit secrets first
+        try:
+            import streamlit as st
+            self.SMTP_SERVER = st.secrets.get("SMTP_SERVER", "smtp.office365.com")
+            self.SMTP_PORT = int(st.secrets.get("SMTP_PORT", 587))
+            self.EMAIL_SENDER = st.secrets.get("EMAIL_SENDER_EMAIL", "")
+            self.EMAIL_PASSWORD = st.secrets.get("EMAIL_PASSWORD_ENV_KEY", "")
+        except Exception:
+            # Fallback to environment variables
+            self.SMTP_SERVER = os.getenv("SMTP_SERVER", "smtp.office365.com")
+            self.SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
+            self.EMAIL_SENDER = os.getenv("EMAIL_SENDER_EMAIL", "")
+            self.EMAIL_PASSWORD = os.getenv("CEO_AGENT_EMAIL_PASSWORD", "")
+        
+        # Paths
+        self.BASE_DIR = Path(__file__).resolve().parent if '__file__' in globals() else Path(os.getcwd())
+        self.DATA_DIR = self.BASE_DIR / "data"
+        self.REGISTRY_FILE = self.DATA_DIR / "tasks_registry.xlsx"
+        
+    def validate(self):
+        """Validate required configuration."""
+        if not self.EMAIL_PASSWORD:
+            raise ValueError("Email password not configured")
+        if not self.EMAIL_SENDER:
+            raise ValueError("Email sender not configured")
+
+config = Config()
