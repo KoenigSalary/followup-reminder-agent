@@ -53,10 +53,10 @@ TEAM_FILE = BASE_DIR / "data" / "Team_Directory.xlsx"
 
 # Priority-based reminder frequency (days)
 REMINDER_FREQUENCY = {
-    'URGENT': 0,
-    'HIGH': 0,
-    'MEDIUM': 0,
-    'LOW': 0
+    'URGENT': 1,
+    'HIGH': 2,
+    'MEDIUM': 3,
+    'LOW': 5
 }
 
 def load_team_directory():
