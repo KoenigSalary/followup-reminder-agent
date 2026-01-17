@@ -173,16 +173,16 @@ def create_email_body(task):
     priority_color = priority_colors.get(priority, '#ffc107')
     
     html = f"""
-    <html>
-    <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
-        <div style="max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #ddd; border-radius: 8px;">
-            <h2 style="color: #d32f2f; border-bottom: 2px solid #d32f2f; padding-bottom: 10px;">
-    ⏰ Task Reminder
-            </h2>
-            
-            <p>Dear <strong>{owner}</strong>,</p>
-            
-            <p>This is a reminder for the following task assigned to you:</p>
+<html>
+<body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
+    <div style="max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #ddd; border-radius: 8px;">
+        <h2 style="color: #d32f2f; border-bottom: 2px solid #d32f2f; padding-bottom: 10px;">
+            \u23f0 Task Reminder
+        </h2>
+        
+        <p>Dear <strong>{owner}</strong>,</p>
+        
+        <p>This is a reminder for the following task assigned to you:</p>
             
             <table style="width: 100%; border-collapse: collapse; margin: 20px 0;">
                 <tr style="background-color: #f5f5f5;">
