@@ -24,14 +24,21 @@ load_dotenv(BASE_DIR / '.env')
 
 def _get_secret(key: str, default=None):
     """Read from OS env first, then Streamlit secrets (Cloud)."""
-    val = os.getenv(key)
-    if val is not None and str(val).strip() != "":
-        return val
+    # Try Streamlit secrets first (better for cloud deployment)
     try:
         import streamlit as st
-        return st.secrets.get(key, default)
+        val = st.secrets.get(key)
+        if val is not None and str(val).strip() != '':
+            return val
     except Exception:
-        return default
+        pass
+    
+    # Fallback to environment variable
+    val = os.getenv(key)
+    if val is not None and str(val).strip() != '':
+        return val
+    
+    return default
 
 # Email configuration
 SMTP_SERVER = _get_secret('SMTP_SERVER', 'smtp.office365.com')
