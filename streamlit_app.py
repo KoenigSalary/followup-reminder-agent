@@ -11,16 +11,18 @@ import sys
 import importlib
 import inspect
 from datetime import datetime
-
-# Setup
-BASE_DIR = Path(__file__).resolve().parent
-sys.path.insert(0, str(BASE_DIR))
-
 from utils.excel_handler import ExcelHandler
+
+# Get the base directory more reliably
+if '__file__' in globals():
+    BASE_DIR = Path(__file__).resolve().parent
+else:
+    # Fallback for Streamlit Cloud or Jupyter
+    BASE_DIR = Path(os.getcwd())
+
 
 # Excel file path
 REGISTRY_FILE = BASE_DIR / "data" / "tasks_registry.xlsx"
-
 
 def ensure_registry_exists():
     """Create registry file if missing."""
