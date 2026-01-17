@@ -66,7 +66,10 @@ def load_registry():
         return None
 
 def send_reminders():
-    """Main reminder logic"""for this task"""
+    """
+    Main reminder logic for sending task reminders.
+    Reads tasks from Excel and sends emails to owners.
+    """
     # Must be OPEN
     status = str(task.get('Status', '')).strip().upper()
     if status not in ['OPEN', 'PENDING', 'IN PROGRESS']:
