@@ -70,38 +70,88 @@ def send_reminders():
     Main reminder logic for sending task reminders.
     Reads tasks from Excel and sends emails to owners.
     """
-    # Must be OPEN
-    status = str(task.get('Status', '')).strip().upper()
-    if status not in ['OPEN', 'PENDING', 'IN PROGRESS']:
-        return False
+    from pathlib import Path
+    from utils.excel_handler import ExcelHandler
     
-    # Get priority
-    priority = str(task.get('Priority', 'MEDIUM')).strip().upper()
-    if priority not in REMINDER_FREQUENCY:
-        priority = 'MEDIUM'
+    BASE_DIR = Path(__file__).resolve().parent
+    REGISTRY_FILE = BASE_DIR / "data" / "tasks_registry.xlsx"
     
-    # Check last reminder date
-    last_reminder = task.get('Last Reminder Date') or task.get('Last Reminder On')
+    if not REGISTRY_FILE.exists():
+        return "❌ Registry file not found"
     
-    if pd.isna(last_reminder):
-        # Never sent - send now
-        return True
+    excel_handler = ExcelHandler(str(REGISTRY_FILE))
+    df = excel_handler.load_data()
     
-    # Check if enough days have passed
-    try:
-        if isinstance(last_reminder, str):
-            last_date = pd.to_datetime(last_reminder).date()
+    if df.empty:
+        return "No tasks found in registry"
+    
+    sent_count = 0
+    skipped_count = 0
+    
+    for idx, row in df.iterrows():
+        task = row.to_dict()
+        
+        # Must be OPEN/PENDING/IN PROGRESS
+        status = str(task.get('Status', '')).strip().upper()
+        if status not in ['OPEN', 'PENDING', 'IN PROGRESS']:
+            skipped_count += 1
+            continue
+        
+        # Get priority
+        priority = str(task.get('Priority', 'MEDIUM')).strip().upper()
+        if priority not in REMINDER_FREQUENCY:
+            priority = 'MEDIUM'
+        
+        # Check last reminder date
+        last_reminder = task.get('Last Reminder Date') or task.get('Last Reminder On')
+        
+        should_send = False
+        if pd.isna(last_reminder) or not last_reminder:
+            # Never sent - send now
+            should_send = True
         else:
-            last_date = last_reminder.date() if hasattr(last_reminder, 'date') else last_reminder
+            # Check if enough days have passed
+            try:
+                if isinstance(last_reminder, str):
+                    last_date = pd.to_datetime(last_reminder).date()
+                else:
+                    last_date = last_reminder.date() if hasattr(last_reminder, 'date') else last_reminder
+                
+                days_since = (datetime.now().date() - last_date).days
+                frequency = REMINDER_FREQUENCY[priority]
+                
+                should_send = days_since >= frequency
+                
+            except Exception as e:
+                print(f"   ⚠️  Error checking reminder date: {e}")
+                should_send = True  # Send if can't determine
         
-        days_since = (datetime.now().date() - last_date).days
-        frequency = REMINDER_FREQUENCY[priority]
-        
-        return days_since >= frequency
-        
-    except Exception as e:
-        print(f"   ⚠️  Error checking reminder date: {e}")
-        return True  # Send if can't determine
+        if should_send:
+            try:
+                # Send email (you need to implement send_email_reminder)
+                owner = str(task.get('Owner', '')).strip()
+                subject = str(task.get('Subject', '')).strip()
+                
+                if owner and owner.lower() != 'unassigned':
+                    # Call your email sending function here
+                    # send_email_reminder(task)
+                    
+                    # Update last reminder date
+                    excel_handler.update_row(idx, {
+                        'Last Reminder Date': datetime.now().strftime('%Y-%m-%d'),
+                        'Last Reminder On': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                    })
+                    sent_count += 1
+                    print(f"✅ Sent reminder to {owner} for: {subject}")
+                else:
+                    skipped_count += 1
+            except Exception as e:
+                print(f"❌ Error sending reminder: {e}")
+                skipped_count += 1
+        else:
+            skipped_count += 1
+    
+    return f"Sent {sent_count} reminders, skipped {skipped_count} tasks"
 
 def send_email(to_email, cc_emails, subject, body, task_id):
     """Send email with proper error handling"""
