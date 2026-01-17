@@ -12,6 +12,7 @@ import importlib
 import inspect
 from datetime import datetime
 from utils.excel_handler import ExcelHandler
+from file_utils import safe_excel_operation, create_file_if_not_exists, backup_file, FileLockError
 
 # Get the base directory more reliably
 if '__file__' in globals():
@@ -26,18 +27,20 @@ REGISTRY_FILE = BASE_DIR / "data" / "tasks_registry.xlsx"
 
 def ensure_registry_exists():
     """Create registry file if missing."""
-    REGISTRY_FILE.parent.mkdir(parents=True, exist_ok=True)
-
-    if not REGISTRY_FILE.exists():
-        # Create using ExcelHandler's required columns (future-proof)
-        # We instantiate a temp handler to get required_columns, but we must ensure file exists first.
-        # So we write minimal header that ExcelHandler can expand later.
+    def create_registry(file_path):
+        """Create a new registry file."""
         df = pd.DataFrame(columns=[
-            "task_id", "meeting_id", "Subject", "Owner", "CC", "Due Date",
-            "Remarks", "Priority", "Status", "Created On", "Last Updated",
-            "Last Reminder Date", "Last Reminder On", "Completed Date", "Auto Reply Sent"
+            "Task", "Owner", "CC", "Due Date",
+            "Remarks", "Priority", "Status", "Created On", "Last Update",
+            "Last Reminder On", "Completed Date", "Auto Reply Sent"
         ])
-        df.to_excel(REGISTRY_FILE, index=False)
+        df.to_excel(file_path, index=False)
+    
+    try:
+        create_file_if_not_exists(REGISTRY_FILE, create_registry)
+    except Exception as e:
+        st.error(f"❌ Failed to create registry file: {e}")
+        raise
 
 def get_excel_handler():
     """Get ExcelHandler with correct path (Cloud-safe)."""
