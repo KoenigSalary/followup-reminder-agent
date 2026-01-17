@@ -34,13 +34,45 @@ def ensure_registry_exists():
             "Remarks", "Priority", "Status", "Created On", "Last Update",
             "Last Reminder On", "Completed Date", "Auto Reply Sent"
         ])
+    def write_operation(file_path):
         df.to_excel(file_path, index=False)
-    
+
+    try:
+        safe_excel_operation(REGISTRY_FILE, write_operation)
+    except FileLockError as e:
+        st.error(f"❌ Could not save data: {e}")
+        st.warning("💡 Make sure the Excel file is not open in another application.")
+   
     try:
         create_file_if_not_exists(REGISTRY_FILE, create_registry)
     except Exception as e:
         st.error(f"❌ Failed to create registry file: {e}")
         raise
+
+def save_tasks_to_registry(df: pd.DataFrame):
+    """Save tasks to registry with safe file handling."""
+    
+    # Optional: Create backup before writing
+    try:
+        if REGISTRY_FILE.exists():
+            backup_path = backup_file(REGISTRY_FILE)
+            st.info(f"📋 Backup created: {backup_path.name}")
+    except Exception as e:
+        st.warning(f"⚠️ Could not create backup: {e}")
+    
+    # Define the write operation
+    def write_operation(file_path):
+        df.to_excel(file_path, index=False)
+    
+    # Execute with safe locking
+    try:
+        safe_excel_operation(REGISTRY_FILE, write_operation)
+        st.success("✅ Tasks saved successfully!")
+    except FileLockError as e:
+        st.error(f"❌ Could not save tasks: {e}")
+        st.info("💡 Please close the Excel file if it's open and try again.")
+    except Exception as e:
+        st.error(f"❌ Unexpected error: {e}")
 
 def get_excel_handler():
     """Get ExcelHandler with correct path (Cloud-safe)."""
