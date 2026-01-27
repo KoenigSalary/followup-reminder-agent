@@ -4,6 +4,7 @@ Streamlit App - Follow-up & Reminder Team
 FINAL VERSION - Logo shifted right for perfect alignment
 """
 
+import os
 import streamlit as st
 import pandas as pd
 from pathlib import Path
@@ -11,47 +12,45 @@ import sys
 import importlib
 import inspect
 from datetime import datetime
+
 from utils.excel_handler import ExcelHandler
 from file_utils import safe_excel_operation, create_file_if_not_exists, backup_file, FileLockError
 
 # Get the base directory more reliably
-if '__file__' in globals():
+if "__file__" in globals():
     BASE_DIR = Path(__file__).resolve().parent
 else:
-    # Fallback for Streamlit Cloud or Jupyter
     BASE_DIR = Path(os.getcwd())
-
 
 # Excel file path
 REGISTRY_FILE = BASE_DIR / "data" / "tasks_registry.xlsx"
 
+
 def ensure_registry_exists():
-    """Create registry file if missing."""
+    """Create registry file if missing (safe + correct columns)."""
+
+    REGISTRY_FILE.parent.mkdir(parents=True, exist_ok=True)
+
     def create_registry(file_path):
-        """Create a new registry file."""
+        # ✅ MUST match ExcelHandler required_columns
         df = pd.DataFrame(columns=[
-            "Task", "Owner", "CC", "Due Date",
-            "Remarks", "Priority", "Status", "Created On", "Last Update",
-            "Last Reminder On", "Completed Date", "Auto Reply Sent"
+            "task_id", "meeting_id", "Subject", "Owner", "CC", "Due Date",
+            "Remarks", "Priority", "Status", "Created On", "Last Updated",
+            "Last Reminder Date", "Last Reminder On", "Completed Date", "Auto Reply Sent"
         ])
-    def write_operation(file_path):
         df.to_excel(file_path, index=False)
 
-    try:
-        safe_excel_operation(REGISTRY_FILE, write_operation)
-    except FileLockError as e:
-        st.error(f"❌ Could not save data: {e}")
-        st.warning("💡 Make sure the Excel file is not open in another application.")
-   
+    # 1) Ensure file exists (no locking needed for first create)
     try:
         create_file_if_not_exists(REGISTRY_FILE, create_registry)
     except Exception as e:
         st.error(f"❌ Failed to create registry file: {e}")
         raise
 
+
 def save_tasks_to_registry(df: pd.DataFrame):
     """Save tasks to registry with safe file handling."""
-    
+
     # Optional: Create backup before writing
     try:
         if REGISTRY_FILE.exists():
@@ -59,12 +58,10 @@ def save_tasks_to_registry(df: pd.DataFrame):
             st.info(f"📋 Backup created: {backup_path.name}")
     except Exception as e:
         st.warning(f"⚠️ Could not create backup: {e}")
-    
-    # Define the write operation
+
     def write_operation(file_path):
         df.to_excel(file_path, index=False)
-    
-    # Execute with safe locking
+
     try:
         safe_excel_operation(REGISTRY_FILE, write_operation)
         st.success("✅ Tasks saved successfully!")
@@ -78,10 +75,10 @@ def get_excel_handler():
     """Get ExcelHandler with correct path (Cloud-safe)."""
     try:
         ensure_registry_exists()
-        handler = ExcelHandler(str(REGISTRY_FILE))
-        return handler
+        return ExcelHandler(str(REGISTRY_FILE))
     except Exception as e:
         st.error(f"❌ Error initializing ExcelHandler: {e}")
+        st.exception(e)
         return None
 
 # Page config
@@ -92,13 +89,13 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Debug (keep while fixing)
+# Debug
 with st.sidebar:
     debug_mode = st.toggle("🛠 Debug mode", value=False)
 
 if debug_mode:
-    st.info(f"ExcelHandler loaded from: {inspect.getfile(ExcelHandler)}")
-    st.info(f"openpyxl spec: {importlib.util.find_spec('openpyxl')}")
+    st.sidebar.info(f"ExcelHandler loaded from: {inspect.getfile(ExcelHandler)}")
+    st.sidebar.info(f"openpyxl spec: {importlib.util.find_spec('openpyxl')}")
 
 # Custom CSS with logo shifted right
 st.markdown("""
@@ -177,11 +174,10 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # Initialize session
-if 'logged_in' not in st.session_state:
+if "logged_in" not in st.session_state:
     st.session_state.logged_in = False
-if 'username' not in st.session_state:
+if "username" not in st.session_state:
     st.session_state.username = None
-
 
 def show_login():
     """Display login page with logo shifted right."""
