@@ -25,7 +25,6 @@ else:
 # Excel file path
 REGISTRY_FILE = BASE_DIR / "data" / "tasks_registry.xlsx"
 
-
 def ensure_registry_exists():
     """Create registry file if missing (safe + correct columns)."""
 
@@ -46,7 +45,6 @@ def ensure_registry_exists():
     except Exception as e:
         st.error(f"❌ Failed to create registry file: {e}")
         raise
-
 
 def save_tasks_to_registry(df: pd.DataFrame):
     """Save tasks to registry with safe file handling."""
@@ -350,6 +348,36 @@ def show_bulk_upload():
     st.markdown("---")
     st.subheader("👁️ File Preview")
 
+    st.markdown("---")
+    st.subheader("💾 Bulk Upload Actions")
+
+    UPLOAD_DIR = Path("data") / "uploads"
+    UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+
+    colA, colB = st.columns(2)
+
+    with colA:
+        if st.button("💾 Save Upload File", use_container_width=True):
+            ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+            save_path = UPLOAD_DIR / f"{ts}_{uploaded_file.name}"
+
+            # IMPORTANT: reset pointer before reading again
+            uploaded_file.seek(0)
+            save_path.write_bytes(uploaded_file.read())
+
+            st.success(f"✅ Saved upload to: {save_path}")
+
+    with colB:
+        if st.button("🚀 Process and Create Tasks", use_container_width=True, type="primary"):
+
+            # ✅ Guard (this prevents your df.dropna crash)
+            if df is None:
+                st.error("❌ Could not read the uploaded file into a table. Only Excel (.xlsx) and CSV are supported for Bulk MOM Upload.")
+                st.stop()
+
+            df2 = df.dropna(how="all")
+            st.info(f"Processing {len(df2)} rows...")
+       
     df = None
     try:
         if uploaded_file.name.lower().endswith(".xlsx"):
