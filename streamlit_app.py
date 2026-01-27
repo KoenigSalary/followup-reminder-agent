@@ -4,7 +4,6 @@ Streamlit App - Follow-up & Reminder Team
 FINAL VERSION - Logo shifted right for perfect alignment
 """
 
-import os
 import streamlit as st
 import pandas as pd
 from pathlib import Path
@@ -12,45 +11,47 @@ import sys
 import importlib
 import inspect
 from datetime import datetime
-
 from utils.excel_handler import ExcelHandler
 from file_utils import safe_excel_operation, create_file_if_not_exists, backup_file, FileLockError
 
 # Get the base directory more reliably
-if "__file__" in globals():
+if '__file__' in globals():
     BASE_DIR = Path(__file__).resolve().parent
 else:
+    # Fallback for Streamlit Cloud or Jupyter
     BASE_DIR = Path(os.getcwd())
+
 
 # Excel file path
 REGISTRY_FILE = BASE_DIR / "data" / "tasks_registry.xlsx"
 
-
 def ensure_registry_exists():
-    """Create registry file if missing (safe + correct columns)."""
-
-    REGISTRY_FILE.parent.mkdir(parents=True, exist_ok=True)
-
+    """Create registry file if missing."""
     def create_registry(file_path):
-        # ✅ MUST match ExcelHandler required_columns
+        """Create a new registry file."""
         df = pd.DataFrame(columns=[
-            "task_id", "meeting_id", "Subject", "Owner", "CC", "Due Date",
-            "Remarks", "Priority", "Status", "Created On", "Last Updated",
-            "Last Reminder Date", "Last Reminder On", "Completed Date", "Auto Reply Sent"
+            "Task", "Owner", "CC", "Due Date",
+            "Remarks", "Priority", "Status", "Created On", "Last Update",
+            "Last Reminder On", "Completed Date", "Auto Reply Sent"
         ])
+    def write_operation(file_path):
         df.to_excel(file_path, index=False)
 
-    # 1) Ensure file exists (no locking needed for first create)
+    try:
+        safe_excel_operation(REGISTRY_FILE, write_operation)
+    except FileLockError as e:
+        st.error(f"❌ Could not save data: {e}")
+        st.warning("💡 Make sure the Excel file is not open in another application.")
+   
     try:
         create_file_if_not_exists(REGISTRY_FILE, create_registry)
     except Exception as e:
         st.error(f"❌ Failed to create registry file: {e}")
         raise
 
-
 def save_tasks_to_registry(df: pd.DataFrame):
     """Save tasks to registry with safe file handling."""
-
+    
     # Optional: Create backup before writing
     try:
         if REGISTRY_FILE.exists():
@@ -58,10 +59,12 @@ def save_tasks_to_registry(df: pd.DataFrame):
             st.info(f"📋 Backup created: {backup_path.name}")
     except Exception as e:
         st.warning(f"⚠️ Could not create backup: {e}")
-
+    
+    # Define the write operation
     def write_operation(file_path):
         df.to_excel(file_path, index=False)
-
+    
+    # Execute with safe locking
     try:
         safe_excel_operation(REGISTRY_FILE, write_operation)
         st.success("✅ Tasks saved successfully!")
@@ -71,17 +74,15 @@ def save_tasks_to_registry(df: pd.DataFrame):
     except Exception as e:
         st.error(f"❌ Unexpected error: {e}")
 
-
 def get_excel_handler():
     """Get ExcelHandler with correct path (Cloud-safe)."""
     try:
         ensure_registry_exists()
-        return ExcelHandler(str(REGISTRY_FILE))
+        handler = ExcelHandler(str(REGISTRY_FILE))
+        return handler
     except Exception as e:
         st.error(f"❌ Error initializing ExcelHandler: {e}")
-        st.exception(e)
         return None
-
 
 # Page config
 st.set_page_config(
@@ -91,13 +92,13 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Debug
+# Debug (keep while fixing)
 with st.sidebar:
     debug_mode = st.toggle("🛠 Debug mode", value=False)
 
 if debug_mode:
-    st.sidebar.info(f"ExcelHandler loaded from: {inspect.getfile(ExcelHandler)}")
-    st.sidebar.info(f"openpyxl spec: {importlib.util.find_spec('openpyxl')}")
+    st.info(f"ExcelHandler loaded from: {inspect.getfile(ExcelHandler)}")
+    st.info(f"openpyxl spec: {importlib.util.find_spec('openpyxl')}")
 
 # Custom CSS with logo shifted right
 st.markdown("""
@@ -176,10 +177,11 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # Initialize session
-if "logged_in" not in st.session_state:
+if 'logged_in' not in st.session_state:
     st.session_state.logged_in = False
-if "username" not in st.session_state:
+if 'username' not in st.session_state:
     st.session_state.username = None
+
 
 def show_login():
     """Display login page with logo shifted right."""
@@ -300,9 +302,225 @@ def show_manual_entry():
         st.error(f"❌ Error: {e}")
         st.exception(e)
 
+def show_bulk_upload():
+    st.header("📂 Bulk MOM Upload")
+    st.markdown("Upload Minutes of Meeting (MOM) files to extract and create multiple tasks at once.")
+    st.markdown("---")
 
-# ✅ keep your show_bulk_upload(), show_send_reminders(), show_settings(), main()
-# (Your bulk upload block is already OK in your paste; no changes required there.)
+    # ✅ Ensure mapping keys always exist (prevents NameError on reruns)
+    for k in ["subject_col", "owner_col", "priority_col", "due_date_col", "remarks_col", "cc_col"]:
+        st.session_state.setdefault(k, "")
+
+    uploaded_file = st.file_uploader(
+        "Choose a file",
+        type=["xlsx", "xls", "csv", "txt", "pdf", "docx"],
+        help="Upload Excel, CSV, Text, PDF, or Word files containing task information"
+    )
+
+    if uploaded_file is None:
+        st.info("👆 Upload a file to get started")
+        st.markdown("---")
+        st.subheader("📥 Download Sample Template")
+
+        sample_data = {
+            "Subject": ["MOM-001", "MOM-001", "MOM-001"],
+            "Owner": ["Praveen", "Rajesh", "Amit"],
+            "Priority": ["HIGH", "MEDIUM", "LOW"],
+            "Due Date": ["16.01.2026", "20.01.2026", "30.01.2026"],
+            "Remarks": ["Task detail 1", "Task detail 2", "Task detail 3"],
+            "CC": ["", "someone@example.com", ""]
+        }
+        sample_df = pd.DataFrame(sample_data)
+
+        st.download_button(
+            label="📥 Download CSV Template",
+            data=sample_df.to_csv(index=False).encode("utf-8"),
+            file_name="task_upload_template.csv",
+            mime="text/csv",
+            use_container_width=True
+        )
+        return
+
+    st.success(f"✅ File uploaded: {uploaded_file.name}")
+
+    # Processing options
+    st.subheader("⚙️ Processing Options")
+    c1, c2 = st.columns(2)
+    with c1:
+        default_priority = st.selectbox("Default Priority", ["URGENT", "HIGH", "MEDIUM", "LOW"], index=2)
+    with c2:
+        default_status = st.selectbox("Default Status", ["OPEN", "PENDING", "IN PROGRESS"], index=0)
+
+    st.markdown("---")
+    st.subheader("👁️ File Preview")
+
+    df = None
+    try:
+        if uploaded_file.name.lower().endswith(".xlsx"):
+            df = pd.read_excel(uploaded_file, engine="openpyxl")
+        elif uploaded_file.name.lower().endswith(".csv"):
+            df = pd.read_csv(uploaded_file)
+        elif uploaded_file.name.lower().endswith(".txt"):
+            content = uploaded_file.read().decode("utf-8")
+            st.text_area("File Content", content, height=300)
+        else:
+            st.info("📄 Preview not available for this file type.")
+
+        if df is not None:
+            st.dataframe(df, width="stretch")
+            st.info(f"📊 Found {len(df)} rows in the file")
+
+    except Exception as e:
+        st.error(f"❌ Error reading file: {e}")
+        return
+
+    # ✅ Column mapping (ONLY after df exists)
+    if df is not None:
+        st.markdown("---")
+        st.subheader("🔗 Column Mapping")
+        st.markdown("Map your file columns to task fields:")
+
+        cols = df.columns.tolist()
+        x1, x2, x3 = st.columns(3)
+
+        with x1:
+            st.selectbox("Meeting ID / MOM No. Column", [""] + cols, key="subject_col")
+            st.selectbox("Owner Column", [""] + cols, key="owner_col")
+
+        with x2:
+            st.selectbox("Priority Column", [""] + cols, key="priority_col")
+            st.selectbox("Due Date Column", [""] + cols, key="due_date_col")
+
+        with x3:
+            st.selectbox("Remarks Column (task details)", [""] + cols, key="remarks_col")
+            st.selectbox("CC Column", [""] + cols, key="cc_col")
+
+        if debug_mode:
+            st.markdown("### ✅ Selected Mapping (Debug)")
+            st.json({k: st.session_state[k] for k in ["subject_col","owner_col","priority_col","due_date_col","remarks_col","cc_col"]})
+
+        # ✅ Require mapping INCLUDING due date (fixes "all due today")
+        if (not st.session_state["subject_col"]
+            or not st.session_state["owner_col"]
+            or not st.session_state["remarks_col"]
+            or not st.session_state["due_date_col"]):
+            st.error("Please select: MOM No., Owner, Remarks, and Due Date columns.")
+            st.stop()
+
+    # ---- Helpers ----
+    def clean(v):
+        if v is None:
+            return ""
+        if isinstance(v, float) and pd.isna(v):
+            return ""
+        return str(v).strip()
+
+    def parse_due_date(v):
+        # empty
+        if v is None or (isinstance(v, float) and pd.isna(v)):
+            return ""
+
+        # already datetime/date
+        if hasattr(v, "strftime"):
+            return v.strftime("%Y-%m-%d")
+
+        s = str(v).strip()
+        if not s:
+            return ""
+
+        # excel serial date (if it comes as a number-like string)
+        if s.isdigit():
+            try:
+                return pd.to_datetime(float(s), unit="D", origin="1899-12-30").strftime("%Y-%m-%d")
+            except Exception:
+                pass
+
+        # dd.mm.yyyy / dd-mm-yyyy / dd/mm/yyyy
+        try:
+            return pd.to_datetime(s, dayfirst=True, errors="raise").strftime("%Y-%m-%d")
+        except Exception:
+            return ""
+
+    # Process button
+    st.markdown("---")
+    p1, p2, p3 = st.columns([1, 2, 1])
+    with p2:
+        if st.button("🚀 Process and Create Tasks", use_container_width=True, type="primary"):
+            excel_handler = get_excel_handler()
+            if not excel_handler:
+                st.error("❌ Could not initialize ExcelHandler")
+                return
+
+            created_count = 0
+            try:
+                df2 = df.dropna(how="all")  # skip fully blank rows
+
+                for idx, row in df2.iterrows():
+                    meeting_id_val = clean(row.get(st.session_state["subject_col"]))
+                    owner_val = clean(row.get(st.session_state["owner_col"]))
+                    remarks_val = clean(row.get(st.session_state["remarks_col"]))
+
+                    priority_val = clean(row.get(st.session_state["priority_col"])) if st.session_state["priority_col"] else ""
+                    cc_val = clean(row.get(st.session_state["cc_col"])) if st.session_state["cc_col"] else ""
+                    due_raw = row.get(st.session_state["due_date_col"])
+                    due_val = parse_due_date(due_raw)
+
+                    # Skip empty-ish rows
+                    if not meeting_id_val and not owner_val and not remarks_val:
+                        continue
+
+                    # ✅ Make real Subject from remarks (first line / 80 chars)
+                    subject_text = (remarks_val.splitlines()[0] if remarks_val else f"Task {idx+1}")[:80]
+
+                    task_data = {
+                        "meeting_id": meeting_id_val,
+                        "Owner": owner_val or "Unassigned",
+                        "Subject": subject_text,
+                        "Priority": priority_val or default_priority,
+                        "Status": default_status,
+                        "Due Date": due_val or datetime.now().strftime("%Y-%m-%d"),
+                        "Remarks": remarks_val or f"Imported from {uploaded_file.name}",
+                        "CC": cc_val
+                    }
+
+                    excel_handler.add_task(task_data)
+                    created_count += 1
+
+                st.success(f"✅ Successfully created {created_count} tasks from {uploaded_file.name}")
+                st.balloons()
+
+            except Exception as e:
+                st.error(f"❌ Error processing file: {e}")
+                st.exception(e)
+
+def show_send_reminders():
+    st.header("📧 Send Task Reminders")
+    st.markdown("Send email reminders to task owners for pending tasks.")
+    st.markdown("---")
+
+    if st.button("📤 Send Reminders Now", type="primary", use_container_width=True):
+        with st.spinner("Sending reminders..."):
+            try:
+                from run_reminders import send_reminders
+                result_msg = send_reminders()
+                st.success(f"✅ {result_msg}")
+            except Exception as e:
+                st.error(f"❌ Error: {e}")
+                st.exception(e)
+
+def show_settings():
+    try:
+        settings_module = BASE_DIR / "views" / "settings_page.py"
+        if settings_module.exists():
+            from views.settings_page import render_settings
+            render_settings()
+        else:
+            st.header("⚙️ Settings")
+            st.warning("⚠️ Settings module not found. Please install settings_page.py in the views folder.")
+            st.info("Download from the provided link and copy to: views/settings_page.py")
+    except Exception as e:
+        st.error(f"❌ Settings error: {e}")
+
 
 def main():
     if not st.session_state.logged_in:
