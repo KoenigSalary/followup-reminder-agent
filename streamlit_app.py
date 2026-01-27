@@ -363,18 +363,22 @@ def show_bulk_upload():
             st.info("📄 Preview not available for this file type.")
 
         if df is not None:
-            st.dataframe(df, width="stretch")
-            st.info(f"📊 Found {len(df)} rows in the file")
+            if st.button("🚀 Process and Create Tasks", use_container_width=True, type="primary"):
+                # proceed
+        else:
+            st.warning("Upload an Excel/CSV file that can be previewed before processing.")
 
     except Exception as e:
-        st.error(f"❌ Error reading file: {e}")
+        st.error(...)
         return
 
-    # ✅ Column mapping (ONLY after df exists)
-    if df is not None:
-        st.markdown("---")
-        st.subheader("🔗 Column Mapping")
-        st.markdown("Map your file columns to task fields:")
+    # ✅ Process button (AFTER mapping)
+    if st.button("🚀 Process and Create Tasks", use_container_width=True, type="primary"):
+
+        # ✅ THIS IS THE SNIPPET YOU ASKED FOR (right after entering the button click)
+        if df is None:
+            st.error("❌ Could not read the uploaded file into a table. Only Excel (.xlsx) and CSV are supported for Bulk MOM Upload.")
+            st.stop()
 
         cols = df.columns.tolist()
         x1, x2, x3 = st.columns(3)
