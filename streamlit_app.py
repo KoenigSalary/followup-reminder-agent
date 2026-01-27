@@ -27,10 +27,12 @@ REGISTRY_FILE = BASE_DIR / "data" / "tasks_registry.xlsx"
 
 
 def ensure_registry_exists():
-    """Create registry file if missing (safe, no df-scope bug)."""
+    """Create registry file if missing (safe + correct columns)."""
+
+    REGISTRY_FILE.parent.mkdir(parents=True, exist_ok=True)
 
     def create_registry(file_path):
-        # ✅ Must match ExcelHandler columns
+        # ✅ MUST match ExcelHandler required_columns
         df = pd.DataFrame(columns=[
             "task_id", "meeting_id", "Subject", "Owner", "CC", "Due Date",
             "Remarks", "Priority", "Status", "Created On", "Last Updated",
@@ -38,7 +40,7 @@ def ensure_registry_exists():
         ])
         df.to_excel(file_path, index=False)
 
-    # 1) Ensure file exists first
+    # 1) Ensure file exists (no locking needed for first create)
     try:
         create_file_if_not_exists(REGISTRY_FILE, create_registry)
     except Exception as e:
@@ -48,6 +50,7 @@ def ensure_registry_exists():
 
 def save_tasks_to_registry(df: pd.DataFrame):
     """Save tasks to registry with safe file handling."""
+
     # Optional: Create backup before writing
     try:
         if REGISTRY_FILE.exists():
@@ -73,8 +76,7 @@ def get_excel_handler():
     """Get ExcelHandler with correct path (Cloud-safe)."""
     try:
         ensure_registry_exists()
-        handler = ExcelHandler(str(REGISTRY_FILE))
-        return handler
+        return ExcelHandler(str(REGISTRY_FILE))
     except Exception as e:
         st.error(f"❌ Error initializing ExcelHandler: {e}")
         st.exception(e)
@@ -89,13 +91,13 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Debug (keep while fixing)
+# Debug
 with st.sidebar:
     debug_mode = st.toggle("🛠 Debug mode", value=False)
 
 if debug_mode:
-    st.info(f"ExcelHandler loaded from: {inspect.getfile(ExcelHandler)}")
-    st.info(f"openpyxl spec: {importlib.util.find_spec('openpyxl')}")
+    st.sidebar.info(f"ExcelHandler loaded from: {inspect.getfile(ExcelHandler)}")
+    st.sidebar.info(f"openpyxl spec: {importlib.util.find_spec('openpyxl')}")
 
 # Custom CSS with logo shifted right
 st.markdown("""
@@ -178,7 +180,6 @@ if "logged_in" not in st.session_state:
     st.session_state.logged_in = False
 if "username" not in st.session_state:
     st.session_state.username = None
-
 
 def show_login():
     """Display login page with logo shifted right."""
