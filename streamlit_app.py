@@ -359,17 +359,33 @@ def show_bulk_upload():
         elif uploaded_file.name.lower().endswith(".txt"):
             content = uploaded_file.read().decode("utf-8")
             st.text_area("File Content", content, height=300)
+            df = None
         else:
             st.info("📄 Preview not available for this file type.")
+            df = None
 
-        if df is not None:
-            if st.button("🚀 Process and Create Tasks", use_container_width=True, type="primary"):
-                # proceed
-        else:
+        # ✅ Show warning if df is not available
+        if df is None:
             st.warning("Upload an Excel/CSV file that can be previewed before processing.")
+            return
+
+        # ✅ Preview
+        st.dataframe(df, use_container_width=True)
+
+        # ✅ Process button
+        if st.button("🚀 Process and Create Tasks", use_container_width=True, type="primary"):
+
+            # ✅ YOUR REQUIRED GUARD (right after entering button click)
+            if df is None:
+                st.error("❌ Could not read the uploaded file into a table. Only Excel (.xlsx) and CSV are supported for Bulk MOM Upload.")
+                st.stop()
+
+            # ✅ TEMP: put at least one real line so indentation is valid
+            st.success("✅ Button clicked, df is valid. Continue processing here...")
 
     except Exception as e:
-        st.error(...)
+        st.error(f"❌ Error reading file: {e}")
+        st.exception(e)
         return
 
     # ✅ Process button (AFTER mapping)
