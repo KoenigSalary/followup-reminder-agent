@@ -301,6 +301,8 @@ def show_bulk_upload():
     st.markdown("Upload Minutes of Meeting (MOM) files to extract and create multiple tasks at once.")
     st.markdown("---")
 
+    df = None  # ✅ ALWAYS define df first (prevents UnboundLocalError)
+
     # ✅ Ensure mapping keys always exist (prevents NameError on reruns)
     for k in ["subject_col", "owner_col", "priority_col", "due_date_col", "remarks_col", "cc_col"]:
         st.session_state.setdefault(k, "")
@@ -345,40 +347,13 @@ def show_bulk_upload():
     with c2:
         default_status = st.selectbox("Default Status", ["OPEN", "PENDING", "IN PROGRESS"], index=0)
 
+    # ✅ define df ONCE before anything uses it
+    df = None
+
     st.markdown("---")
     st.subheader("👁️ File Preview")
 
-    st.markdown("---")
-    st.subheader("💾 Bulk Upload Actions")
-
-    UPLOAD_DIR = Path("data") / "uploads"
-    UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
-
-    colA, colB = st.columns(2)
-
-    with colA:
-        if st.button("💾 Save Upload File", use_container_width=True):
-            ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-            save_path = UPLOAD_DIR / f"{ts}_{uploaded_file.name}"
-
-            # IMPORTANT: reset pointer before reading again
-            uploaded_file.seek(0)
-            save_path.write_bytes(uploaded_file.read())
-
-            st.success(f"✅ Saved upload to: {save_path}")
-
-    with colB:
-        if st.button("🚀 Process and Create Tasks", use_container_width=True, type="primary"):
-
-            # ✅ Guard (this prevents your df.dropna crash)
-            if df is None:
-                st.error("❌ Could not read the uploaded file into a table. Only Excel (.xlsx) and CSV are supported for Bulk MOM Upload.")
-                st.stop()
-
-            df2 = df.dropna(how="all")
-            st.info(f"Processing {len(df2)} rows...")
-       
-    df = None
+    # 1) Read the file FIRST (so df exists before any buttons)
     try:
         if uploaded_file.name.lower().endswith(".xlsx"):
             df = pd.read_excel(uploaded_file, engine="openpyxl")
@@ -392,29 +367,53 @@ def show_bulk_upload():
             st.info("📄 Preview not available for this file type.")
             df = None
 
-        # ✅ Show warning if df is not available
-        if df is None:
-            st.warning("Upload an Excel/CSV file that can be previewed before processing.")
-            return
+    except Exception as e:
+        st.error(f"❌ Error reading file: {e}")
+        st.exception(e)
+        df = None
 
-        # ✅ Preview
-        st.dataframe(df, use_container_width=True)
+    # 2) If df is not available, stop BEFORE any mapping/process
+    if df is None:
+        st.warning("Upload an Excel/CSV file that can be previewed before processing.")
+        return
 
-        # ✅ Process button
+    # 3) Preview
+    st.dataframe(df, use_container_width=True)
+    st.caption(f"Rows: {len(df)}")
+
+    # 4) Actions (Save + Process)
+    st.markdown("---")
+    st.subheader("💾 Bulk Upload Actions")
+
+    UPLOAD_DIR = Path("data") / "uploads"
+    UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+
+    colA, colB = st.columns(2)
+
+    with colA:
+        if st.button("💾 Save Upload File", use_container_width=True):
+            ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+            save_path = UPLOAD_DIR / f"{ts}_{uploaded_file.name}"
+
+            uploaded_file.seek(0)  # reset pointer before reading again
+            save_path.write_bytes(uploaded_file.read())
+
+            st.success(f"✅ Saved upload to: {save_path}")
+
+    with colB:
         if st.button("🚀 Process and Create Tasks", use_container_width=True, type="primary"):
 
-            # ✅ YOUR REQUIRED GUARD (right after entering button click)
+            # ✅ PUT YOUR SNIPPET HERE (right after entering the button click)
             if df is None:
                 st.error("❌ Could not read the uploaded file into a table. Only Excel (.xlsx) and CSV are supported for Bulk MOM Upload.")
                 st.stop()
 
-            # ✅ TEMP: put at least one real line so indentation is valid
-            st.success("✅ Button clicked, df is valid. Continue processing here...")
+            # now safe
+            df2 = df.dropna(how="all")
+            st.info(f"Processing {len(df2)} rows...")
 
-    except Exception as e:
-        st.error(f"❌ Error reading file: {e}")
-        st.exception(e)
-        return
+            # TODO: your clean()/parse_due_date(), excel_handler init, loop, add_task...
+            # st.success("✅ Done")
 
     # ✅ Process button (AFTER mapping)
     if st.button("🚀 Process and Create Tasks", use_container_width=True, type="primary"):
