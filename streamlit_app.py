@@ -349,12 +349,12 @@ def show_bulk_upload():
     st.subheader("⚙️ Processing Options")
     c1, c2 = st.columns(2)
     with c1:
-        default_priority = st.selectbox(
-            "Default Priority (applies to all tasks)",
-            ["URGENT", "HIGH", "MEDIUM", "LOW"],
-            index=2,
-            key="bulk_default_priority"
-        )
+        priority_raw = clean(row.get(st.session_state["priority_col"])) if st.session_state["priority_col"] else ""
+        priority_final = (priority_raw or default_priority).strip().upper()
+        if priority_final not in ["URGENT", "HIGH", "MEDIUM", "LOW"]:
+        priority_final = default_priority
+
+task_data["Priority"] = priority_final
     with c2:
         default_status = st.selectbox(
             "Default Status (applies to all tasks)",
@@ -470,7 +470,7 @@ def show_bulk_upload():
     st.markdown("Map your file columns to task fields:")
 
     cols = df.columns.tolist()
-    x1, x2, x3 = st.columns(3)
+    x1, x2, x3, x4 = st.columns(3)
 
     with x1:
         st.selectbox("Meeting ID / MOM No. Column", [""] + cols, key="subject_col")
@@ -482,6 +482,9 @@ def show_bulk_upload():
 
     with x3:
         st.selectbox("Remarks Column (task details)", [""] + cols, key="remarks_col")
+
+    with x4:
+        st.selectbox("Priority Column (optional)", [""] + cols, key="priority_col")
 
     # Require mapping
     if (not st.session_state["owner_col"]
