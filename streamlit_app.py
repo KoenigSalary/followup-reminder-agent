@@ -640,10 +640,6 @@ def show_bulk_upload():
             if created > 0:
                 st.balloons()
 
-        except Exception as e:
-            st.error(f"❌ Error processing file: {e}")
-            st.exception(e)
-
 def show_send_reminders():
     st.header("📧 Send Task Reminders")
     st.markdown("Send email reminders to task owners for pending tasks.")
