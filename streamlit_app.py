@@ -301,10 +301,14 @@ def show_bulk_upload():
     st.markdown("Upload Minutes of Meeting (MOM) files to extract and create multiple tasks at once.")
     st.markdown("---")
 
-    # ✅ ALWAYS define df first (prevents UnboundLocalError)
+    from pathlib import Path
+    from datetime import datetime
+    import pandas as pd
+
+    # ✅ Always define df first
     df = None
 
-    # ✅ Ensure mapping keys always exist (prevents NameError on reruns)
+    # ✅ Ensure mapping keys always exist
     for k in ["subject_col", "owner_col", "due_date_col", "remarks_col", "cc_col"]:
         st.session_state.setdefault(k, "")
 
@@ -319,14 +323,13 @@ def show_bulk_upload():
         st.markdown("---")
         st.subheader("📥 Download Sample Template")
 
-        sample_data = {
+        sample_df = pd.DataFrame({
             "Subject": ["MOM-001", "MOM-001", "MOM-001"],
             "Owner": ["Praveen", "Rajesh", "Amit"],
             "Due Date": ["16.01.2026", "20.01.2026", "30.01.2026"],
             "Remarks": ["Task detail 1", "Task detail 2", "Task detail 3"],
             "CC": ["", "someone@example.com", ""]
-        }
-        sample_df = pd.DataFrame(sample_data)
+        })
 
         st.download_button(
             label="📥 Download CSV Template",
@@ -339,71 +342,72 @@ def show_bulk_upload():
 
     st.success(f"✅ File uploaded: {uploaded_file.name}")
 
-    # ✅ Processing options (ONE TIME, applies to ALL tasks)
+    # ✅ One-time options for ALL tasks
     st.subheader("⚙️ Processing Options")
     c1, c2 = st.columns(2)
     with c1:
         default_priority = st.selectbox(
             "Default Priority (applies to all tasks)",
             ["URGENT", "HIGH", "MEDIUM", "LOW"],
-            index=2
+            index=2,
+            key="bulk_default_priority"
         )
     with c2:
         default_status = st.selectbox(
             "Default Status (applies to all tasks)",
             ["OPEN", "PENDING", "IN PROGRESS"],
-            index=0
+            index=0,
+            key="bulk_default_status"
         )
 
     st.markdown("---")
     st.subheader("👁️ File Preview")
 
-    # 1) Read the file FIRST
+    # ✅ Read file
     try:
         if uploaded_file.name.lower().endswith(".xlsx"):
             df = pd.read_excel(uploaded_file, engine="openpyxl")
+
         elif uploaded_file.name.lower().endswith(".csv"):
-            df = pd.read_csv(uploaded_file)
+            uploaded_file.seek(0)
+            df = pd.read_csv(
+                uploaded_file,
+                sep=None,
+                engine="python",
+                encoding="utf-8",
+                on_bad_lines="skip"
+            )
+
     except Exception as e:
         st.error(f"❌ Error reading file: {e}")
         st.exception(e)
         df = None
 
-    # If file cannot be read into table -> stop early
     if df is None:
         st.error("❌ Could not read the uploaded file into a table. Only Excel (.xlsx) and CSV are supported for Bulk MOM Upload.")
         st.stop()
 
-    # 2) Preview
-    st.dataframe(df, use_container_width=True)
-    st.caption(f"Rows: {len(df)}")
+    # ✅ Debug (helps you confirm columns are correct)
+    st.write("df.shape =", df.shape)
+    st.write("df.columns =", df.columns.tolist())
+    st.dataframe(df.head(10), use_container_width=True)
 
-    # 3) Column Mapping (before processing)
+    # ✅ Mapping
     st.markdown("---")
     st.subheader("🔗 Column Mapping")
-    st.markdown("Map your file columns to task fields:")
-
     cols = df.columns.tolist()
-    x1, x2, x3 = st.columns(3)
 
+    x1, x2, x3 = st.columns(3)
     with x1:
         st.selectbox("Meeting ID / MOM No. Column", [""] + cols, key="subject_col")
         st.selectbox("Owner Column", [""] + cols, key="owner_col")
-
     with x2:
         st.selectbox("Due Date Column", [""] + cols, key="due_date_col")
         st.selectbox("CC Column", [""] + cols, key="cc_col")
-
     with x3:
         st.selectbox("Remarks Column (task details)", [""] + cols, key="remarks_col")
 
-    # Optional debug (make sure debug_mode exists in your app)
-    debug_mode = st.session_state.get("debug_mode", False)
-    if debug_mode:
-        st.markdown("### ✅ Selected Mapping (Debug)")
-        st.json({k: st.session_state[k] for k in ["subject_col", "owner_col", "due_date_col", "remarks_col", "cc_col"]})
-
-    # ✅ Require mapping (prevents "all due today" and "Unassigned")
+    # ✅ Require mapping
     if (not st.session_state["subject_col"]
         or not st.session_state["owner_col"]
         or not st.session_state["remarks_col"]
@@ -411,7 +415,22 @@ def show_bulk_upload():
         st.error("Please select: MOM No., Owner, Remarks, and Due Date columns.")
         st.stop()
 
-    # ---- Helpers ----
+    # ✅ Save upload file (optional)
+    st.markdown("---")
+    st.subheader("💾 Bulk Upload Actions")
+    UPLOAD_DIR = Path("data") / "uploads"
+    UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+
+    colA, colB = st.columns(2)
+
+    with colA:
+        if st.button("💾 Save Upload File", use_container_width=True, key="bulk_save_upload_btn"):
+            ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+            save_path = UPLOAD_DIR / f"{ts}_{uploaded_file.name}"
+            uploaded_file.seek(0)
+            save_path.write_bytes(uploaded_file.read())
+            st.success(f"✅ Saved upload to: {save_path}")
+
     def clean(v):
         if v is None:
             return ""
@@ -428,27 +447,10 @@ def show_bulk_upload():
         except Exception:
             return datetime.now().strftime("%Y-%m-%d")
 
-    # 4) Bulk Upload Actions (optional save + process)
-    st.markdown("---")
-    st.subheader("💾 Bulk Upload Actions")
-
-    UPLOAD_DIR = Path("data") / "uploads"
-    UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
-
-    colA, colB = st.columns(2)
-
-    with colA:
-        if st.button("💾 Save Upload File", use_container_width=True):
-            ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-            save_path = UPLOAD_DIR / f"{ts}_{uploaded_file.name}"
-            uploaded_file.seek(0)
-            save_path.write_bytes(uploaded_file.read())
-            st.success(f"✅ Saved upload to: {save_path}")
-
     with colB:
-        if st.button("🚀 Process and Create Tasks", use_container_width=True, type="primary"):
+        if st.button("🚀 Process and Create Tasks", use_container_width=True, type="primary", key="bulk_create_tasks_btn"):
 
-            # ✅ YOUR SNIPPET (right after entering the button click)
+            # ✅ REQUIRED GUARD (first line in button click)
             if df is None:
                 st.error("❌ Could not read the uploaded file into a table. Only Excel (.xlsx) and CSV are supported for Bulk MOM Upload.")
                 st.stop()
@@ -468,19 +470,17 @@ def show_bulk_upload():
                 cc_val = clean(row.get(st.session_state["cc_col"])) if st.session_state["cc_col"] else ""
                 due_val = parse_due_date(row.get(st.session_state["due_date_col"]))
 
-                # Skip empty lines
                 if not meeting_id_val and not owner_val and not remarks_val:
                     continue
 
-                # Create a better subject from remarks
                 subject_text = (remarks_val.splitlines()[0] if remarks_val else f"Task {idx+1}")[:80]
 
                 task_data = {
                     "meeting_id": meeting_id_val,
                     "Owner": owner_val or "Unassigned",
                     "Subject": subject_text,
-                    "Priority": default_priority,   # ✅ one time priority for ALL tasks
-                    "Status": default_status,       # ✅ one time status for ALL tasks
+                    "Priority": default_priority,   # ✅ one-time priority for ALL tasks
+                    "Status": default_status,       # ✅ one-time status for ALL tasks
                     "Due Date": due_val,
                     "Remarks": remarks_val or f"Imported from {uploaded_file.name}",
                     "CC": cc_val
