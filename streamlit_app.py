@@ -297,6 +297,11 @@ def show_manual_entry():
         st.exception(e)
 
 def show_bulk_upload():
+    import pandas as pd
+    from pathlib import Path
+    from datetime import datetime
+    import streamlit as st
+
     st.header("📂 Bulk MOM Upload")
     st.markdown("Upload Minutes of Meeting (MOM) files to extract and create multiple tasks at once.")
     st.markdown("---")
@@ -323,14 +328,29 @@ def show_bulk_upload():
         if not s:
             return datetime.now().strftime("%Y-%m-%d")
         try:
-            return pd.to_datetime(s, dayfirst=True).strftime("%Y-%m-%d")
+            return pd.to_datetime(s, dayfirst=True, errors="raise").strftime("%Y-%m-%d")
         except Exception:
             return datetime.now().strftime("%Y-%m-%d")
+
+    def normalize_priority(v: str, default_val: str) -> str:
+        s = clean(v).upper()
+        if not s:
+            return default_val
+        aliases = {
+            "MED": "MEDIUM",
+            "MID": "MEDIUM",
+            "NORMAL": "MEDIUM",
+            "URG": "URGENT",
+        }
+        s = aliases.get(s, s)
+        if s not in ["URGENT", "HIGH", "MEDIUM", "LOW"]:
+            return default_val
+        return s
 
     def parse_mom_lines_to_df(lines: list[str]) -> pd.DataFrame:
         """
         If CSV is actually 'one task per line', convert it into a table with
-        Remarks + Owner extracted from '@Name'.
+        Remarks + Owner extracted from '@Name'. Priority stays blank.
         """
         rows = []
         for line in lines:
@@ -391,12 +411,12 @@ def show_bulk_upload():
 
     st.success(f"✅ File uploaded: {uploaded_file.name}")
 
-    # ✅ One-time defaults (apply to ALL tasks unless Priority Column is mapped)
+    # ✅ One-time defaults (used if column not mapped / blank)
     st.subheader("⚙️ Processing Options")
     c1, c2 = st.columns(2)
     with c1:
         default_priority = st.selectbox(
-            "Default Priority (applies to all tasks unless Priority column mapped)",
+            "Default Priority (applies if Priority column not mapped/blank)",
             ["URGENT", "HIGH", "MEDIUM", "LOW"],
             index=2,
             key="bulk_default_priority"
@@ -421,13 +441,13 @@ def show_bulk_upload():
             uploaded_file.seek(0)
             df_try = pd.read_csv(
                 uploaded_file,
-                sep=None,
-                engine="python",
+                sep=None,              # auto-detect delimiter
+                engine="python",       # tolerant parser
                 encoding="utf-8",
-                on_bad_lines="skip"
+                on_bad_lines="skip"    # avoid crash on malformed rows
             )
 
-            # Detect MOM text-style CSV like your screenshot where column name becomes a sentence
+            # Detect MOM text-style CSV (your earlier screenshot behavior)
             if df_try.shape[1] == 1 and len(df_try.columns) == 1 and len(str(df_try.columns[0])) > 30:
                 colname = str(df_try.columns[0])
                 lines = [colname] + df_try.iloc[:, 0].astype(str).tolist()
@@ -441,7 +461,7 @@ def show_bulk_upload():
         st.exception(e)
         df = None
 
-    # ✅ Guard (preview must exist)
+    # ✅ Guard
     if df is None:
         st.error("❌ Could not read the uploaded file into a table. Only Excel (.xlsx) and CSV are supported for Bulk MOM Upload.")
         st.stop()
@@ -463,12 +483,12 @@ def show_bulk_upload():
     x1, x2, x3, x4 = st.columns(4)
 
     with x1:
-        st.selectbox("Meeting ID / MOM No. Column", [""] + cols, key="subject_col")
+        st.selectbox("Meeting ID / MOM No. Column (optional)", [""] + cols, key="subject_col")
         st.selectbox("Owner Column", [""] + cols, key="owner_col")
 
     with x2:
         st.selectbox("Due Date Column", [""] + cols, key="due_date_col")
-        st.selectbox("CC Column", [""] + cols, key="cc_col")
+        st.selectbox("CC Column (optional)", [""] + cols, key="cc_col")
 
     with x3:
         st.selectbox("Remarks Column (task details)", [""] + cols, key="remarks_col")
@@ -525,8 +545,7 @@ def show_bulk_upload():
                 st.error("❌ Could not initialize ExcelHandler")
                 st.stop()
 
-            # Default priority always available via session_state (prevents NameError)
-            default_priority_safe = st.session_state.get("bulk_default_priority", default_priority)
+            default_priority_safe = st.session_state.get("bulk_default_priority", "MEDIUM")
 
             for idx, row in df2.iterrows():
                 meeting_id_val = clean(row.get(st.session_state["subject_col"])) if st.session_state["subject_col"] else ""
@@ -535,13 +554,10 @@ def show_bulk_upload():
                 cc_val = clean(row.get(st.session_state["cc_col"])) if st.session_state["cc_col"] else ""
                 due_val = parse_due_date(row.get(st.session_state["due_date_col"]))
 
-                # Priority: use file column if mapped, else default
+                # ✅ Priority: use mapped column if selected + non-empty, else default
                 priority_raw = clean(row.get(st.session_state["priority_col"])) if st.session_state["priority_col"] else ""
-                priority_final = (priority_raw or default_priority_safe).strip().upper()
-                if priority_final not in ["URGENT", "HIGH", "MEDIUM", "LOW"]:
-                    priority_final = default_priority_safe
+                priority_final = normalize_priority(priority_raw, default_priority_safe)
 
-                # skip empty
                 if not owner_val and not remarks_val and not meeting_id_val:
                     continue
 
