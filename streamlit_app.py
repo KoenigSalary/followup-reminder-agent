@@ -301,16 +301,17 @@ def show_bulk_upload():
     st.markdown("Upload Minutes of Meeting (MOM) files to extract and create multiple tasks at once.")
     st.markdown("---")
 
-    df = None  # ✅ ALWAYS define df first (prevents UnboundLocalError)
+    # ✅ ALWAYS define df first (prevents UnboundLocalError)
+    df = None
 
     # ✅ Ensure mapping keys always exist (prevents NameError on reruns)
-    for k in ["subject_col", "owner_col", "priority_col", "due_date_col", "remarks_col", "cc_col"]:
+    for k in ["subject_col", "owner_col", "due_date_col", "remarks_col", "cc_col"]:
         st.session_state.setdefault(k, "")
 
     uploaded_file = st.file_uploader(
         "Choose a file",
-        type=["xlsx", "xls", "csv", "txt", "pdf", "docx"],
-        help="Upload Excel, CSV, Text, PDF, or Word files containing task information"
+        type=["xlsx", "csv"],
+        help="Upload Excel (.xlsx) or CSV containing task information"
     )
 
     if uploaded_file is None:
@@ -321,7 +322,6 @@ def show_bulk_upload():
         sample_data = {
             "Subject": ["MOM-001", "MOM-001", "MOM-001"],
             "Owner": ["Praveen", "Rajesh", "Amit"],
-            "Priority": ["HIGH", "MEDIUM", "LOW"],
             "Due Date": ["16.01.2026", "20.01.2026", "30.01.2026"],
             "Remarks": ["Task detail 1", "Task detail 2", "Task detail 3"],
             "CC": ["", "someone@example.com", ""]
@@ -339,49 +339,96 @@ def show_bulk_upload():
 
     st.success(f"✅ File uploaded: {uploaded_file.name}")
 
-    # Processing options
+    # ✅ Processing options (ONE TIME, applies to ALL tasks)
     st.subheader("⚙️ Processing Options")
     c1, c2 = st.columns(2)
     with c1:
-        default_priority = st.selectbox("Default Priority", ["URGENT", "HIGH", "MEDIUM", "LOW"], index=2)
+        default_priority = st.selectbox(
+            "Default Priority (applies to all tasks)",
+            ["URGENT", "HIGH", "MEDIUM", "LOW"],
+            index=2
+        )
     with c2:
-        default_status = st.selectbox("Default Status", ["OPEN", "PENDING", "IN PROGRESS"], index=0)
-
-    # ✅ define df ONCE before anything uses it
-    df = None
+        default_status = st.selectbox(
+            "Default Status (applies to all tasks)",
+            ["OPEN", "PENDING", "IN PROGRESS"],
+            index=0
+        )
 
     st.markdown("---")
     st.subheader("👁️ File Preview")
 
-    # 1) Read the file FIRST (so df exists before any buttons)
+    # 1) Read the file FIRST
     try:
         if uploaded_file.name.lower().endswith(".xlsx"):
             df = pd.read_excel(uploaded_file, engine="openpyxl")
         elif uploaded_file.name.lower().endswith(".csv"):
             df = pd.read_csv(uploaded_file)
-        elif uploaded_file.name.lower().endswith(".txt"):
-            content = uploaded_file.read().decode("utf-8")
-            st.text_area("File Content", content, height=300)
-            df = None
-        else:
-            st.info("📄 Preview not available for this file type.")
-            df = None
-
     except Exception as e:
         st.error(f"❌ Error reading file: {e}")
         st.exception(e)
         df = None
 
-    # 2) If df is not available, stop BEFORE any mapping/process
+    # If file cannot be read into table -> stop early
     if df is None:
-        st.warning("Upload an Excel/CSV file that can be previewed before processing.")
-        return
+        st.error("❌ Could not read the uploaded file into a table. Only Excel (.xlsx) and CSV are supported for Bulk MOM Upload.")
+        st.stop()
 
-    # 3) Preview
+    # 2) Preview
     st.dataframe(df, use_container_width=True)
     st.caption(f"Rows: {len(df)}")
 
-    # 4) Actions (Save + Process)
+    # 3) Column Mapping (before processing)
+    st.markdown("---")
+    st.subheader("🔗 Column Mapping")
+    st.markdown("Map your file columns to task fields:")
+
+    cols = df.columns.tolist()
+    x1, x2, x3 = st.columns(3)
+
+    with x1:
+        st.selectbox("Meeting ID / MOM No. Column", [""] + cols, key="subject_col")
+        st.selectbox("Owner Column", [""] + cols, key="owner_col")
+
+    with x2:
+        st.selectbox("Due Date Column", [""] + cols, key="due_date_col")
+        st.selectbox("CC Column", [""] + cols, key="cc_col")
+
+    with x3:
+        st.selectbox("Remarks Column (task details)", [""] + cols, key="remarks_col")
+
+    # Optional debug (make sure debug_mode exists in your app)
+    debug_mode = st.session_state.get("debug_mode", False)
+    if debug_mode:
+        st.markdown("### ✅ Selected Mapping (Debug)")
+        st.json({k: st.session_state[k] for k in ["subject_col", "owner_col", "due_date_col", "remarks_col", "cc_col"]})
+
+    # ✅ Require mapping (prevents "all due today" and "Unassigned")
+    if (not st.session_state["subject_col"]
+        or not st.session_state["owner_col"]
+        or not st.session_state["remarks_col"]
+        or not st.session_state["due_date_col"]):
+        st.error("Please select: MOM No., Owner, Remarks, and Due Date columns.")
+        st.stop()
+
+    # ---- Helpers ----
+    def clean(v):
+        if v is None:
+            return ""
+        if isinstance(v, float) and pd.isna(v):
+            return ""
+        return str(v).strip()
+
+    def parse_due_date(v):
+        s = clean(v)
+        if not s:
+            return datetime.now().strftime("%Y-%m-%d")
+        try:
+            return pd.to_datetime(s, dayfirst=True).strftime("%Y-%m-%d")
+        except Exception:
+            return datetime.now().strftime("%Y-%m-%d")
+
+    # 4) Bulk Upload Actions (optional save + process)
     st.markdown("---")
     st.subheader("💾 Bulk Upload Actions")
 
@@ -394,69 +441,56 @@ def show_bulk_upload():
         if st.button("💾 Save Upload File", use_container_width=True):
             ts = datetime.now().strftime("%Y%m%d_%H%M%S")
             save_path = UPLOAD_DIR / f"{ts}_{uploaded_file.name}"
-
-            uploaded_file.seek(0)  # reset pointer before reading again
+            uploaded_file.seek(0)
             save_path.write_bytes(uploaded_file.read())
-
             st.success(f"✅ Saved upload to: {save_path}")
 
     with colB:
         if st.button("🚀 Process and Create Tasks", use_container_width=True, type="primary"):
 
-            # ✅ PUT YOUR SNIPPET HERE (right after entering the button click)
+            # ✅ YOUR SNIPPET (right after entering the button click)
             if df is None:
                 st.error("❌ Could not read the uploaded file into a table. Only Excel (.xlsx) and CSV are supported for Bulk MOM Upload.")
                 st.stop()
 
-            # now safe
             df2 = df.dropna(how="all")
-            st.info(f"Processing {len(df2)} rows...")
+            created_count = 0
 
-            # TODO: your clean()/parse_due_date(), excel_handler init, loop, add_task...
-            # st.success("✅ Done")
+            excel_handler = get_excel_handler()
+            if not excel_handler:
+                st.error("❌ Could not initialize ExcelHandler")
+                st.stop()
 
-    # ✅ Process button (AFTER mapping)
-    if st.button("🚀 Process and Create Tasks", use_container_width=True, type="primary"):
+            for idx, row in df2.iterrows():
+                meeting_id_val = clean(row.get(st.session_state["subject_col"]))
+                owner_val = clean(row.get(st.session_state["owner_col"]))
+                remarks_val = clean(row.get(st.session_state["remarks_col"]))
+                cc_val = clean(row.get(st.session_state["cc_col"])) if st.session_state["cc_col"] else ""
+                due_val = parse_due_date(row.get(st.session_state["due_date_col"]))
 
-        # ✅ THIS IS THE SNIPPET YOU ASKED FOR (right after entering the button click)
-        if df is None:
-            st.error("❌ Could not read the uploaded file into a table. Only Excel (.xlsx) and CSV are supported for Bulk MOM Upload.")
-            st.stop()
+                # Skip empty lines
+                if not meeting_id_val and not owner_val and not remarks_val:
+                    continue
 
-        cols = df.columns.tolist()
-        x1, x2, x3 = st.columns(3)
+                # Create a better subject from remarks
+                subject_text = (remarks_val.splitlines()[0] if remarks_val else f"Task {idx+1}")[:80]
 
-        with x1:
-            st.selectbox("Meeting ID / MOM No. Column", [""] + cols, key="subject_col")
-            st.selectbox("Owner Column", [""] + cols, key="owner_col")
+                task_data = {
+                    "meeting_id": meeting_id_val,
+                    "Owner": owner_val or "Unassigned",
+                    "Subject": subject_text,
+                    "Priority": default_priority,   # ✅ one time priority for ALL tasks
+                    "Status": default_status,       # ✅ one time status for ALL tasks
+                    "Due Date": due_val,
+                    "Remarks": remarks_val or f"Imported from {uploaded_file.name}",
+                    "CC": cc_val
+                }
 
-        with x2:
-            st.selectbox("Priority Column", [""] + cols, key="priority_col")
-            st.selectbox("Due Date Column", [""] + cols, key="due_date_col")
+                excel_handler.add_task(task_data)
+                created_count += 1
 
-        with x3:
-            st.selectbox("Remarks Column (task details)", [""] + cols, key="remarks_col")
-            st.selectbox("CC Column", [""] + cols, key="cc_col")
-
-        if debug_mode:
-            st.markdown("### ✅ Selected Mapping (Debug)")
-            st.json({k: st.session_state[k] for k in ["subject_col","owner_col","priority_col","due_date_col","remarks_col","cc_col"]})
-
-        # ✅ Require mapping INCLUDING due date (fixes "all due today")
-        if (not st.session_state["subject_col"]
-            or not st.session_state["owner_col"]
-            or not st.session_state["remarks_col"]
-            or not st.session_state["due_date_col"]):
-            st.error("Please select: MOM No., Owner, Remarks, and Due Date columns.")
-            st.stop()
-
-    # ---- Helpers ----
-    def clean(v):
-        if v is None:
-            return ""
-        if isinstance(v, float) and pd.isna(v):
-            return ""
-        return str(v).strip()
+            st.success(f"✅ Successfully created {created_count} tasks from {uploaded_file.name}")
+            st.balloons()
 
     def parse_due_date(v):
         # empty
