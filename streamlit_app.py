@@ -414,7 +414,7 @@ def show_bulk_upload():
                 "CC": ""
             })
 
-         return pd.DataFrame(rows)
+        return pd.DataFrame(rows)
 
     # -------- read file --------
     try:
