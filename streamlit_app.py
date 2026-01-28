@@ -298,17 +298,27 @@ def show_manual_entry():
 
 def show_bulk_upload():
     import pandas as pd
+    import streamlit as st
     from datetime import datetime
     from pathlib import Path
-    import streamlit as st
 
     st.header("📂 Bulk MOM Upload")
-    st.markdown("Upload MOM files and create multiple tasks at once (with per-task Priority selection).")
+    st.markdown("Upload Minutes of Meeting (MOM) files to extract and create multiple tasks at once.")
     st.markdown("---")
 
     debug_mode = st.session_state.get("debug_mode", False)
 
-    # --- Helpers ---
+    # ✅ Always define df first
+    df = None
+
+    # ✅ Ensure session keys exist
+    for k in [
+        "subject_col", "owner_col", "priority_col", "due_date_col",
+        "remarks_col", "cc_col", "bulk_tasks"
+    ]:
+        st.session_state.setdefault(k, "" if k != "bulk_tasks" else [])
+
+    # ---------- helpers ----------
     def clean(v):
         if v is None:
             return ""
@@ -325,7 +335,23 @@ def show_bulk_upload():
         except Exception:
             return datetime.now().strftime("%Y-%m-%d")
 
-    def parse_mom_lines_to_df(lines):
+    def normalize_priority(v, fallback="MEDIUM"):
+        s = clean(v).upper()
+        if not s:
+            return fallback
+        aliases = {"MED": "MEDIUM", "MID": "MEDIUM", "URG": "URGENT", "NORMAL": "MEDIUM"}
+        s = aliases.get(s, s)
+        if s not in ["URGENT", "HIGH", "MEDIUM", "LOW"]:
+            return fallback
+        return s
+
+    def parse_mom_lines_to_tasks(lines):
+        """
+        Converts MOM text lines into task rows.
+        Supports patterns like:
+          '* Are balances updated?@Sunil'
+        Owner is extracted after '@' if present.
+        """
         rows = []
         for line in lines:
             t = clean(line)
@@ -336,50 +362,82 @@ def show_bulk_upload():
             owner = ""
             remarks = t
             if "@" in t:
-                parts = t.rsplit("@", 1)
-                remarks = parts[0].strip()
-                owner = parts[1].strip()
+                left, right = t.rsplit("@", 1)
+                remarks = left.strip()
+                owner = right.strip()
 
             subject = (remarks.splitlines()[0] if remarks else "")[:80]
+            if not remarks and not owner:
+                continue
 
             rows.append({
                 "meeting_id": "MOM-001",
-                "Owner": owner,
-                "Subject": subject,
+                "Owner": owner or "Unassigned",
+                "Subject": subject or "Task",
                 "Due Date": datetime.now().strftime("%Y-%m-%d"),
                 "Remarks": remarks,
                 "Priority": "MEDIUM",
                 "Status": "OPEN",
                 "CC": ""
             })
-        return pd.DataFrame(rows)
+        return rows
 
-    # --- Upload ---
+    # ---------- upload ----------
     uploaded_file = st.file_uploader(
         "Choose a file",
         type=["xlsx", "csv"],
-        help="Upload Excel (.xlsx) or CSV"
+        help="Upload Excel (.xlsx) or CSV containing task information",
+        key="bulk_uploader"
     )
 
     if uploaded_file is None:
         st.info("👆 Upload a file to get started")
+        st.markdown("---")
+        st.subheader("📥 Download Sample Template")
+
+        sample_df = pd.DataFrame({
+            "Subject": ["MOM-001", "MOM-001", "MOM-001"],
+            "Owner": ["Praveen", "Rajesh", "Amit"],
+            "Priority": ["HIGH", "MEDIUM", "LOW"],
+            "Due Date": ["16.01.2026", "20.01.2026", "30.01.2026"],
+            "Remarks": ["Task detail 1", "Task detail 2", "Task detail 3"],
+            "CC": ["", "someone@example.com", ""]
+        })
+
+        st.download_button(
+            label="📥 Download CSV Template",
+            data=sample_df.to_csv(index=False).encode("utf-8"),
+            file_name="task_upload_template.csv",
+            mime="text/csv",
+            use_container_width=True,
+            key="bulk_template_download"
+        )
         return
 
     st.success(f"✅ File uploaded: {uploaded_file.name}")
 
-    # --- Default status applies to all (priority will be per-row) ---
+    # ---------- processing defaults ----------
     st.subheader("⚙️ Processing Options")
-    default_status = st.selectbox(
-        "Default Status (applies to all tasks)",
-        ["OPEN", "PENDING", "IN PROGRESS"],
-        index=0,
-        key="bulk_default_status"
-    )
+    c1, c2 = st.columns(2)
+    with c1:
+        default_status = st.selectbox(
+            "Default Status (applies to all tasks)",
+            ["OPEN", "PENDING", "IN PROGRESS"],
+            index=0,
+            key="bulk_default_status"
+        )
+    with c2:
+        default_priority = st.selectbox(
+            "Default Priority (used only if per-task priority not set)",
+            ["URGENT", "HIGH", "MEDIUM", "LOW"],
+            index=2,
+            key="bulk_default_priority"
+        )
 
     st.markdown("---")
     st.subheader("👁️ File Preview")
 
-    df = None
+    # ---------- read file ----------
     try:
         if uploaded_file.name.lower().endswith(".xlsx"):
             df = pd.read_excel(uploaded_file, engine="openpyxl")
@@ -394,12 +452,13 @@ def show_bulk_upload():
                 on_bad_lines="skip"
             )
 
-            # Detect MOM text-style CSV (1 column whose "header" is a long sentence)
+            # Detect MOM text-style CSV (1 column and header is a long sentence)
             if df_try.shape[1] == 1 and len(df_try.columns) == 1 and len(str(df_try.columns[0])) > 30:
                 colname = str(df_try.columns[0])
                 lines = [colname] + df_try.iloc[:, 0].astype(str).tolist()
-                df = parse_mom_lines_to_df(lines)
-                st.info("📄 Detected MOM text-style CSV. Converted into tasks table automatically.")
+                tasks = parse_mom_lines_to_tasks(lines)
+                df = pd.DataFrame(tasks)
+                st.info("📄 Detected MOM text-style CSV (one task per line). Converted into tasks automatically.")
             else:
                 df = df_try
 
@@ -408,97 +467,121 @@ def show_bulk_upload():
         st.exception(e)
         df = None
 
-    # ✅ Guard (your requirement)
+    # Guard
     if df is None:
         st.error("❌ Could not read the uploaded file into a table. Only Excel (.xlsx) and CSV are supported for Bulk MOM Upload.")
         st.stop()
 
+    st.dataframe(df.head(30), use_container_width=True)
+    st.caption(f"Rows: {len(df)}")
+
     if debug_mode:
+        st.sidebar.markdown("### Debug: Bulk Upload")
         st.sidebar.write("df.shape:", df.shape)
         st.sidebar.write("df.columns:", df.columns.tolist())
 
-    # --- If df is a raw table, ask for mapping and build df_tasks ---
-    # If df already looks like tasks table (from MOM conversion), skip mapping.
-    expected_cols = {"Owner", "Remarks"}
-    needs_mapping = not expected_cols.issubset(set(df.columns))
+    # ---------- If df already task-like (from MOM conversion) ----------
+    looks_task_like = {"Owner", "Remarks", "Due Date"}.issubset(set(df.columns))
 
-    if needs_mapping:
+    # ---------- mapping (only for true tables) ----------
+    if not looks_task_like:
         st.markdown("---")
         st.subheader("🔗 Column Mapping")
+        st.markdown("Map your file columns to task fields:")
+
         cols = df.columns.tolist()
+        a, b, c = st.columns(3)
+        with a:
+            st.selectbox("Meeting ID / MOM No. Column (optional)", [""] + cols, key="subject_col")
+            st.selectbox("Owner Column", [""] + cols, key="owner_col")
+        with b:
+            st.selectbox("Due Date Column", [""] + cols, key="due_date_col")
+            st.selectbox("Priority Column (optional)", [""] + cols, key="priority_col")
+        with c:
+            st.selectbox("Remarks Column (task details)", [""] + cols, key="remarks_col")
+            st.selectbox("CC Column (optional)", [""] + cols, key="cc_col")
 
-        c1, c2, c3 = st.columns(3)
-        with c1:
-            meeting_col = st.selectbox("Meeting ID / MOM No. Column (optional)", [""] + cols, key="subject_col")
-            owner_col = st.selectbox("Owner Column", [""] + cols, key="owner_col")
-        with c2:
-            due_col = st.selectbox("Due Date Column", [""] + cols, key="due_date_col")
-            cc_col = st.selectbox("CC Column (optional)", [""] + cols, key="cc_col")
-        with c3:
-            remarks_col = st.selectbox("Remarks Column (task details)", [""] + cols, key="remarks_col")
-
-        if not owner_col or not remarks_col or not due_col:
+        if not st.session_state["owner_col"] or not st.session_state["remarks_col"] or not st.session_state["due_date_col"]:
             st.warning("Select at least Owner, Remarks, and Due Date columns to continue.")
             return
 
-        # Build a normalized tasks dataframe
+        # Build tasks list from mapped table
         df2 = df.dropna(how="all")
         tasks = []
         for idx, row in df2.iterrows():
-            owner = clean(row.get(owner_col))
-            remarks = clean(row.get(remarks_col))
-            due = parse_due_date(row.get(due_col))
-            cc = clean(row.get(cc_col)) if cc_col else ""
-            meeting_id = clean(row.get(meeting_col)) if meeting_col else ""
+            meeting_id_val = clean(row.get(st.session_state["subject_col"])) if st.session_state["subject_col"] else ""
+            owner_val = clean(row.get(st.session_state["owner_col"]))
+            remarks_val = clean(row.get(st.session_state["remarks_col"]))
+            cc_val = clean(row.get(st.session_state["cc_col"])) if st.session_state["cc_col"] else ""
+            due_val = parse_due_date(row.get(st.session_state["due_date_col"]))
 
-            if not owner and not remarks and not meeting_id:
+            # skip truly empty
+            if not owner_val and not remarks_val and not meeting_id_val:
                 continue
 
-            subject = (remarks.splitlines()[0] if remarks else f"Task {idx+1}")[:80]
+            subject_text = (remarks_val.splitlines()[0] if remarks_val else f"Task {idx+1}")[:80]
+            priority_raw = clean(row.get(st.session_state["priority_col"])) if st.session_state["priority_col"] else ""
+            priority_final = normalize_priority(priority_raw, default_priority)
 
             tasks.append({
-                "meeting_id": meeting_id,
-                "Owner": owner or "Unassigned",
-                "Subject": subject,
-                "Due Date": due,
-                "Remarks": remarks,
-                "Priority": "MEDIUM",   # initial default, user will change per-row
+                "meeting_id": meeting_id_val,
+                "Owner": owner_val or "Unassigned",
+                "Subject": subject_text,
+                "Due Date": due_val,
+                "Remarks": remarks_val,
+                "Priority": priority_final,
                 "Status": default_status,
-                "CC": cc
+                "CC": cc_val
             })
 
-        df_tasks = pd.DataFrame(tasks)
+        st.session_state["bulk_tasks"] = tasks
+
     else:
-        # df already task-like (from MOM conversion)
-        df_tasks = df.copy()
-        if "Status" not in df_tasks.columns:
-            df_tasks["Status"] = default_status
-        else:
-            df_tasks["Status"] = df_tasks["Status"].apply(lambda _: default_status)
+        # df already contains tasks (from MOM conversion)
+        tasks = []
+        df2 = df.dropna(how="all")
+        for idx, row in df2.iterrows():
+            owner_val = clean(row.get("Owner"))
+            remarks_val = clean(row.get("Remarks"))
+            due_val = parse_due_date(row.get("Due Date"))
+            pr = normalize_priority(row.get("Priority"), default_priority)
 
-        if "Priority" not in df_tasks.columns:
-            df_tasks["Priority"] = "MEDIUM"
+            if not owner_val and not remarks_val:
+                continue
 
-    if df_tasks.empty:
-        st.warning("No tasks detected in the file.")
-        return
+            subject_text = clean(row.get("Subject")) or (remarks_val.splitlines()[0] if remarks_val else f"Task {idx+1}")[:80]
+            tasks.append({
+                "meeting_id": clean(row.get("meeting_id")) or clean(row.get("Subject")) or "MOM-001",
+                "Owner": owner_val or "Unassigned",
+                "Subject": subject_text,
+                "Due Date": due_val,
+                "Remarks": remarks_val,
+                "Priority": pr,
+                "Status": default_status,
+                "CC": clean(row.get("CC"))
+            })
+        st.session_state["bulk_tasks"] = tasks
 
-    # --- Per-task Priority selection UI ---
+    # ---------- review / per-task priority ----------
     st.markdown("---")
-    st.subheader("✅ Review Tasks (Set Priority per Task)")
+    st.subheader("✅ Review Tasks (Priority per Task)")
 
-    # Store editable copy in session_state so it survives reruns
-    st.session_state.setdefault("bulk_tasks", df_tasks.to_dict(orient="records"))
+    tasks_list = st.session_state.get("bulk_tasks", [])
+    st.info(f"Tasks detected: {len(tasks_list)}")
+
+    if not tasks_list:
+        st.warning("No tasks detected from the uploaded MOM.")
+        return
 
     priorities = ["URGENT", "HIGH", "MEDIUM", "LOW"]
 
-    edited_rows = []
-    for i, t in enumerate(st.session_state["bulk_tasks"]):
+    edited = []
+    for i, t in enumerate(tasks_list):
         with st.container(border=True):
             st.write(f"**{i+1}. {t.get('Subject','')}**")
             c1, c2, c3 = st.columns([2, 1, 1])
             with c1:
-                st.caption(f"Owner: {t.get('Owner','')}  |  Due: {t.get('Due Date','')}")
+                st.caption(f"Owner: {t.get('Owner','')} | Due: {t.get('Due Date','')}")
             with c2:
                 pr = st.selectbox(
                     "Priority",
@@ -509,109 +592,52 @@ def show_bulk_upload():
             with c3:
                 st.caption(f"Status: {t.get('Status', default_status)}")
 
-            # update
             t["Priority"] = pr
             t["Status"] = default_status
-            edited_rows.append(t)
+            edited.append(t)
 
-    st.session_state["bulk_tasks"] = edited_rows
+    st.session_state["bulk_tasks"] = edited
 
     st.markdown("---")
-    colA, colB = st.columns(2)
+    st.subheader("💾 Bulk Upload Actions")
+    UPLOAD_DIR = Path("data") / "uploads"
+    UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
+    colA, colB = st.columns(2)
     with colA:
-        if st.button("🧹 Reset Priorities to MEDIUM", use_container_width=True):
-            for t in st.session_state["bulk_tasks"]:
-                t["Priority"] = "MEDIUM"
-            st.rerun()
+        if st.button("💾 Save Upload File", use_container_width=True, key="bulk_save_upload_btn"):
+            ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+            save_path = UPLOAD_DIR / f"{ts}_{uploaded_file.name}"
+            uploaded_file.seek(0)
+            save_path.write_bytes(uploaded_file.read())
+            st.success(f"✅ Saved upload to: {save_path}")
 
     with colB:
-        if st.button("🚀 Create Tasks Now", type="primary", use_container_width=True):
+        if st.button("🚀 Create Tasks Now", use_container_width=True, type="primary", key="bulk_create_tasks_btn"):
+
+            # ✅ Your required snippet (first line after click)
+            if df is None:
+                st.error("❌ Could not read the uploaded file into a table. Only Excel (.xlsx) and CSV are supported for Bulk MOM Upload.")
+                st.stop()
+
             excel_handler = get_excel_handler()
             if not excel_handler:
                 st.error("❌ Could not initialize ExcelHandler")
                 st.stop()
 
             created = 0
-            for t in st.session_state["bulk_tasks"]:
-                excel_handler.add_task(t)
-                created += 1
+            errors = 0
 
-            st.success(f"✅ Successfully created {created} tasks.")
-            st.balloons()
+            for i, t in enumerate(st.session_state.get("bulk_tasks", [])):
+                try:
+                    excel_handler.add_task(t)
+                    created += 1
+                except Exception as e:
+                    errors += 1
+                    st.error(f"Failed on task {i+1}: {e}")
 
-    def parse_due_date(v):
-        # empty
-        if v is None or (isinstance(v, float) and pd.isna(v)):
-            return ""
-
-        # already datetime/date
-        if hasattr(v, "strftime"):
-            return v.strftime("%Y-%m-%d")
-
-        s = str(v).strip()
-        if not s:
-            return ""
-
-        # excel serial date (if it comes as a number-like string)
-        if s.isdigit():
-            try:
-                return pd.to_datetime(float(s), unit="D", origin="1899-12-30").strftime("%Y-%m-%d")
-            except Exception:
-                pass
-
-        # dd.mm.yyyy / dd-mm-yyyy / dd/mm/yyyy
-        try:
-            return pd.to_datetime(s, dayfirst=True, errors="raise").strftime("%Y-%m-%d")
-        except Exception:
-            return ""
-
-    # Process button
-    st.markdown("---")
-    p1, p2, p3 = st.columns([1, 2, 1])
-    with p2:
-        if st.button("🚀 Process and Create Tasks", use_container_width=True, type="primary"):
-            excel_handler = get_excel_handler()
-            if not excel_handler:
-                st.error("❌ Could not initialize ExcelHandler")
-                return
-
-            created_count = 0
-            try:
-                df2 = df.dropna(how="all")  # skip fully blank rows
-
-                for idx, row in df2.iterrows():
-                    meeting_id_val = clean(row.get(st.session_state["subject_col"]))
-                    owner_val = clean(row.get(st.session_state["owner_col"]))
-                    remarks_val = clean(row.get(st.session_state["remarks_col"]))
-
-                    priority_val = clean(row.get(st.session_state["priority_col"])) if st.session_state["priority_col"] else ""
-                    cc_val = clean(row.get(st.session_state["cc_col"])) if st.session_state["cc_col"] else ""
-                    due_raw = row.get(st.session_state["due_date_col"])
-                    due_val = parse_due_date(due_raw)
-
-                    # Skip empty-ish rows
-                    if not meeting_id_val and not owner_val and not remarks_val:
-                        continue
-
-                    # ✅ Make real Subject from remarks (first line / 80 chars)
-                    subject_text = (remarks_val.splitlines()[0] if remarks_val else f"Task {idx+1}")[:80]
-
-                    task_data = {
-                        "meeting_id": meeting_id_val,
-                        "Owner": owner_val or "Unassigned",
-                        "Subject": subject_text,
-                        "Priority": priority_val or default_priority,
-                        "Status": default_status,
-                        "Due Date": due_val or datetime.now().strftime("%Y-%m-%d"),
-                        "Remarks": remarks_val or f"Imported from {uploaded_file.name}",
-                        "CC": cc_val
-                    }
-
-                    excel_handler.add_task(task_data)
-                    created_count += 1
-
-                st.success(f"✅ Successfully created {created_count} tasks from {uploaded_file.name}")
+            st.success(f"✅ Created {created} tasks. Errors: {errors}")
+            if created > 0:
                 st.balloons()
 
             except Exception as e:
