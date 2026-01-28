@@ -297,15 +297,18 @@ def show_manual_entry():
         st.exception(e)
 
 def show_bulk_upload():
+    import pandas as pd
+    from pathlib import Path
+    from datetime import datetime
+
     st.header("📂 Bulk MOM Upload")
     st.markdown("Upload Minutes of Meeting (MOM) files to extract and create multiple tasks at once.")
     st.markdown("---")
 
-    from pathlib import Path
-    from datetime import datetime
-    import pandas as pd
+    # Debug mode (keeps code output hidden unless you enable it)
+    debug_mode = st.session_state.get("debug_mode", False)
 
-    # ✅ Always define df first
+    # ✅ ALWAYS define df first
     df = None
 
     # ✅ Ensure mapping keys always exist
@@ -342,7 +345,7 @@ def show_bulk_upload():
 
     st.success(f"✅ File uploaded: {uploaded_file.name}")
 
-    # ✅ One-time options for ALL tasks
+    # ✅ One-time options (apply to ALL tasks)
     st.subheader("⚙️ Processing Options")
     c1, c2 = st.columns(2)
     with c1:
@@ -363,74 +366,7 @@ def show_bulk_upload():
     st.markdown("---")
     st.subheader("👁️ File Preview")
 
-    # ✅ Read file
-    try:
-        if uploaded_file.name.lower().endswith(".xlsx"):
-            df = pd.read_excel(uploaded_file, engine="openpyxl")
-
-        elif uploaded_file.name.lower().endswith(".csv"):
-            uploaded_file.seek(0)
-            df = pd.read_csv(
-                uploaded_file,
-                sep=None,
-                engine="python",
-                encoding="utf-8",
-                on_bad_lines="skip"
-            )
-
-    except Exception as e:
-        st.error(f"❌ Error reading file: {e}")
-        st.exception(e)
-        df = None
-
-    if df is None:
-        st.error("❌ Could not read the uploaded file into a table. Only Excel (.xlsx) and CSV are supported for Bulk MOM Upload.")
-        st.stop()
-
-    # ✅ Debug (helps you confirm columns are correct)
-    st.write("df.shape =", df.shape)
-    st.write("df.columns =", df.columns.tolist())
-    st.dataframe(df.head(10), use_container_width=True)
-
-    # ✅ Mapping
-    st.markdown("---")
-    st.subheader("🔗 Column Mapping")
-    cols = df.columns.tolist()
-
-    x1, x2, x3 = st.columns(3)
-    with x1:
-        st.selectbox("Meeting ID / MOM No. Column", [""] + cols, key="subject_col")
-        st.selectbox("Owner Column", [""] + cols, key="owner_col")
-    with x2:
-        st.selectbox("Due Date Column", [""] + cols, key="due_date_col")
-        st.selectbox("CC Column", [""] + cols, key="cc_col")
-    with x3:
-        st.selectbox("Remarks Column (task details)", [""] + cols, key="remarks_col")
-
-    # ✅ Require mapping
-    if (not st.session_state["subject_col"]
-        or not st.session_state["owner_col"]
-        or not st.session_state["remarks_col"]
-        or not st.session_state["due_date_col"]):
-        st.error("Please select: MOM No., Owner, Remarks, and Due Date columns.")
-        st.stop()
-
-    # ✅ Save upload file (optional)
-    st.markdown("---")
-    st.subheader("💾 Bulk Upload Actions")
-    UPLOAD_DIR = Path("data") / "uploads"
-    UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
-
-    colA, colB = st.columns(2)
-
-    with colA:
-        if st.button("💾 Save Upload File", use_container_width=True, key="bulk_save_upload_btn"):
-            ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-            save_path = UPLOAD_DIR / f"{ts}_{uploaded_file.name}"
-            uploaded_file.seek(0)
-            save_path.write_bytes(uploaded_file.read())
-            st.success(f"✅ Saved upload to: {save_path}")
-
+    # -------- helpers --------
     def clean(v):
         if v is None:
             return ""
@@ -447,12 +383,141 @@ def show_bulk_upload():
         except Exception:
             return datetime.now().strftime("%Y-%m-%d")
 
+    def parse_mom_lines_to_df(lines: list[str]) -> pd.DataFrame:
+        """
+        If CSV is actually 'one task per line' (like your screenshot),
+        convert it into a table with Remarks + Owner extracted from '@Name'.
+        """
+        rows = []
+        for line in lines:
+            t = clean(line)
+            if not t:
+                continue
+            # remove bullets
+            t = t.lstrip("*•- ").strip()
+
+            owner = ""
+            remarks = t
+
+            # extract @Owner if present
+            if "@"
+            in t:
+                parts = t.rsplit("@", 1)
+                remarks = parts[0].strip()
+                owner = parts[1].strip()
+
+            rows.append({
+                "Subject": "MOM-001",
+                "Owner": owner,
+                "Due Date": datetime.now().strftime("%Y-%m-%d"),
+                "Remarks": remarks,
+                "CC": ""
+            })
+
+        return pd.DataFrame(rows)
+
+    # -------- read file --------
+    try:
+        if uploaded_file.name.lower().endswith(".xlsx"):
+            df = pd.read_excel(uploaded_file, engine="openpyxl")
+
+        elif uploaded_file.name.lower().endswith(".csv"):
+            uploaded_file.seek(0)
+
+            # tolerant read first
+            df_try = pd.read_csv(
+                uploaded_file,
+                sep=None,
+                engine="python",
+                encoding="utf-8",
+                on_bad_lines="skip"
+            )
+
+            # If the CSV becomes 1 column with a long "sentence" header (like your screenshot),
+            # treat it as MOM text lines instead of a real table.
+            if df_try.shape[1] == 1 and len(df_try.columns) == 1 and len(str(df_try.columns[0])) > 30:
+                # rebuild text lines: header + column values
+                colname = str(df_try.columns[0])
+                lines = [colname] + df_try.iloc[:, 0].astype(str).tolist()
+                df = parse_mom_lines_to_df(lines)
+                st.info("📄 Detected MOM text-style CSV (one task per line). Converted into table automatically.")
+            else:
+                df = df_try
+
+    except Exception as e:
+        st.error(f"❌ Error reading file: {e}")
+        st.exception(e)
+        df = None
+
+    # ✅ Guard
+    if df is None:
+        st.error("❌ Could not read the uploaded file into a table. Only Excel (.xlsx) and CSV are supported for Bulk MOM Upload.")
+        st.stop()
+
+    # Preview
+    st.dataframe(df.head(50), use_container_width=True)
+    st.caption(f"Rows: {len(df)}")
+
+    # Debug in sidebar (not on main page)
+    if debug_mode:
+        st.sidebar.markdown("### Debug: Bulk Upload")
+        st.sidebar.write("df.shape:", df.shape)
+        st.sidebar.write("df.columns:", df.columns.tolist())
+
+    # Column mapping
+    st.markdown("---")
+    st.subheader("🔗 Column Mapping")
+    st.markdown("Map your file columns to task fields:")
+
+    cols = df.columns.tolist()
+    x1, x2, x3 = st.columns(3)
+
+    with x1:
+        st.selectbox("Meeting ID / MOM No. Column", [""] + cols, key="subject_col")
+        st.selectbox("Owner Column", [""] + cols, key="owner_col")
+
+    with x2:
+        st.selectbox("Due Date Column", [""] + cols, key="due_date_col")
+        st.selectbox("CC Column", [""] + cols, key="cc_col")
+
+    with x3:
+        st.selectbox("Remarks Column (task details)", [""] + cols, key="remarks_col")
+
+    # Require mapping
+    if (not st.session_state["owner_col"]
+        or not st.session_state["remarks_col"]
+        or not st.session_state["due_date_col"]):
+        st.warning("Select at least Owner, Remarks, and Due Date columns to enable processing.")
+
+    st.markdown("---")
+    st.subheader("💾 Bulk Upload Actions")
+
+    # Save upload file (optional)
+    UPLOAD_DIR = Path("data") / "uploads"
+    UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+
+    colA, colB = st.columns(2)
+    with colA:
+        if st.button("💾 Save Upload File", use_container_width=True, key="bulk_save_upload_btn"):
+            ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+            save_path = UPLOAD_DIR / f"{ts}_{uploaded_file.name}"
+            uploaded_file.seek(0)
+            save_path.write_bytes(uploaded_file.read())
+            st.success(f"✅ Saved upload to: {save_path}")
+
     with colB:
         if st.button("🚀 Process and Create Tasks", use_container_width=True, type="primary", key="bulk_create_tasks_btn"):
 
-            # ✅ REQUIRED GUARD (first line in button click)
+            # ✅ Your required snippet (first line after click)
             if df is None:
                 st.error("❌ Could not read the uploaded file into a table. Only Excel (.xlsx) and CSV are supported for Bulk MOM Upload.")
+                st.stop()
+
+            # Require mapping before creating tasks
+            if (not st.session_state["owner_col"]
+                or not st.session_state["remarks_col"]
+                or not st.session_state["due_date_col"]):
+                st.error("Please select Owner, Remarks, and Due Date columns before processing.")
                 st.stop()
 
             df2 = df.dropna(how="all")
@@ -464,13 +529,14 @@ def show_bulk_upload():
                 st.stop()
 
             for idx, row in df2.iterrows():
-                meeting_id_val = clean(row.get(st.session_state["subject_col"]))
+                meeting_id_val = clean(row.get(st.session_state["subject_col"])) if st.session_state["subject_col"] else ""
                 owner_val = clean(row.get(st.session_state["owner_col"]))
                 remarks_val = clean(row.get(st.session_state["remarks_col"]))
                 cc_val = clean(row.get(st.session_state["cc_col"])) if st.session_state["cc_col"] else ""
                 due_val = parse_due_date(row.get(st.session_state["due_date_col"]))
 
-                if not meeting_id_val and not owner_val and not remarks_val:
+                # skip empty
+                if not owner_val and not remarks_val and not meeting_id_val:
                     continue
 
                 subject_text = (remarks_val.splitlines()[0] if remarks_val else f"Task {idx+1}")[:80]
@@ -491,7 +557,7 @@ def show_bulk_upload():
 
             st.success(f"✅ Successfully created {created_count} tasks from {uploaded_file.name}")
             st.balloons()
-
+            
     def parse_due_date(v):
         # empty
         if v is None or (isinstance(v, float) and pd.isna(v)):
