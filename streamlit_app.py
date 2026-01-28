@@ -354,7 +354,7 @@ def show_bulk_upload():
     if priority_final not in ["URGENT", "HIGH", "MEDIUM", "LOW"]:
         priority_final = default_priority
 
-task_data["Priority"] = priority_final
+        task_data["Priority"] = priority_final
     with c2:
         default_status = st.selectbox(
             "Default Status (applies to all tasks)",
