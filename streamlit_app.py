@@ -351,7 +351,7 @@ def show_bulk_upload():
     with c1:
         priority_raw = clean(row.get(st.session_state["priority_col"])) if st.session_state["priority_col"] else ""
         priority_final = (priority_raw or default_priority).strip().upper()
-        if priority_final not in ["URGENT", "HIGH", "MEDIUM", "LOW"]:
+    if priority_final not in ["URGENT", "HIGH", "MEDIUM", "LOW"]:
         priority_final = default_priority
 
 task_data["Priority"] = priority_final
