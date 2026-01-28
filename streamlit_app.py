@@ -297,76 +297,20 @@ def show_manual_entry():
         st.exception(e)
 
 def show_bulk_upload():
-    import pandas as pd
-    from pathlib import Path
-    from datetime import datetime
-
     st.header("📂 Bulk MOM Upload")
     st.markdown("Upload Minutes of Meeting (MOM) files to extract and create multiple tasks at once.")
     st.markdown("---")
 
-    # Debug mode (keeps code output hidden unless you enable it)
     debug_mode = st.session_state.get("debug_mode", False)
 
     # ✅ ALWAYS define df first
     df = None
 
     # ✅ Ensure mapping keys always exist
-    for k in ["subject_col", "owner_col", "due_date_col", "remarks_col", "cc_col"]:
+    for k in ["subject_col", "owner_col", "priority_col", "due_date_col", "remarks_col", "cc_col"]:
         st.session_state.setdefault(k, "")
 
-    uploaded_file = st.file_uploader(
-        "Choose a file",
-        type=["xlsx", "csv"],
-        help="Upload Excel (.xlsx) or CSV containing task information"
-    )
-
-    if uploaded_file is None:
-        st.info("👆 Upload a file to get started")
-        st.markdown("---")
-        st.subheader("📥 Download Sample Template")
-
-        sample_df = pd.DataFrame({
-            "Subject": ["MOM-001", "MOM-001", "MOM-001"],
-            "Owner": ["Praveen", "Rajesh", "Amit"],
-            "Due Date": ["16.01.2026", "20.01.2026", "30.01.2026"],
-            "Remarks": ["Task detail 1", "Task detail 2", "Task detail 3"],
-            "CC": ["", "someone@example.com", ""]
-        })
-
-        st.download_button(
-            label="📥 Download CSV Template",
-            data=sample_df.to_csv(index=False).encode("utf-8"),
-            file_name="task_upload_template.csv",
-            mime="text/csv",
-            use_container_width=True
-        )
-        return
-
-    st.success(f"✅ File uploaded: {uploaded_file.name}")
-
-    # ✅ One-time options (apply to ALL tasks)
-    st.subheader("⚙️ Processing Options")
-    c1, c2 = st.columns(2)
-    with c1:
-        priority_raw = clean(row.get(st.session_state["priority_col"])) if st.session_state["priority_col"] else ""
-        priority_final = (priority_raw or default_priority).strip().upper()
-    if priority_final not in ["URGENT", "HIGH", "MEDIUM", "LOW"]:
-        priority_final = default_priority
-
-        task_data["Priority"] = priority_final
-    with c2:
-        default_status = st.selectbox(
-            "Default Status (applies to all tasks)",
-            ["OPEN", "PENDING", "IN PROGRESS"],
-            index=0,
-            key="bulk_default_status"
-        )
-
-    st.markdown("---")
-    st.subheader("👁️ File Preview")
-
-    # -------- helpers --------
+    # -------- helpers (MUST be defined before use) --------
     def clean(v):
         if v is None:
             return ""
@@ -400,7 +344,6 @@ def show_bulk_upload():
             owner = ""
             remarks = t
 
-            # ✅ FIXED: this must be on one line
             if "@" in t:
                 parts = t.rsplit("@", 1)
                 remarks = parts[0].strip()
@@ -409,12 +352,65 @@ def show_bulk_upload():
             rows.append({
                 "Subject": "MOM-001",
                 "Owner": owner,
+                "Priority": "",
                 "Due Date": datetime.now().strftime("%Y-%m-%d"),
                 "Remarks": remarks,
                 "CC": ""
             })
 
         return pd.DataFrame(rows)
+
+    uploaded_file = st.file_uploader(
+        "Choose a file",
+        type=["xlsx", "csv"],
+        help="Upload Excel (.xlsx) or CSV containing task information"
+    )
+
+    if uploaded_file is None:
+        st.info("👆 Upload a file to get started")
+        st.markdown("---")
+        st.subheader("📥 Download Sample Template")
+
+        sample_df = pd.DataFrame({
+            "Subject": ["MOM-001", "MOM-001", "MOM-001"],
+            "Owner": ["Praveen", "Rajesh", "Amit"],
+            "Priority": ["HIGH", "MEDIUM", "LOW"],
+            "Due Date": ["16.01.2026", "20.01.2026", "30.01.2026"],
+            "Remarks": ["Task detail 1", "Task detail 2", "Task detail 3"],
+            "CC": ["", "someone@example.com", ""]
+        })
+
+        st.download_button(
+            label="📥 Download CSV Template",
+            data=sample_df.to_csv(index=False).encode("utf-8"),
+            file_name="task_upload_template.csv",
+            mime="text/csv",
+            use_container_width=True
+        )
+        return
+
+    st.success(f"✅ File uploaded: {uploaded_file.name}")
+
+    # ✅ One-time defaults (apply to ALL tasks unless Priority Column is mapped)
+    st.subheader("⚙️ Processing Options")
+    c1, c2 = st.columns(2)
+    with c1:
+        default_priority = st.selectbox(
+            "Default Priority (applies to all tasks unless Priority column mapped)",
+            ["URGENT", "HIGH", "MEDIUM", "LOW"],
+            index=2,
+            key="bulk_default_priority"
+        )
+    with c2:
+        default_status = st.selectbox(
+            "Default Status (applies to all tasks)",
+            ["OPEN", "PENDING", "IN PROGRESS"],
+            index=0,
+            key="bulk_default_status"
+        )
+
+    st.markdown("---")
+    st.subheader("👁️ File Preview")
 
     # -------- read file --------
     try:
@@ -423,8 +419,6 @@ def show_bulk_upload():
 
         elif uploaded_file.name.lower().endswith(".csv"):
             uploaded_file.seek(0)
-
-            # tolerant read first
             df_try = pd.read_csv(
                 uploaded_file,
                 sep=None,
@@ -433,10 +427,8 @@ def show_bulk_upload():
                 on_bad_lines="skip"
             )
 
-            # If the CSV becomes 1 column with a long "sentence" header (like your screenshot),
-            # treat it as MOM text lines instead of a real table.
+            # Detect MOM text-style CSV like your screenshot where column name becomes a sentence
             if df_try.shape[1] == 1 and len(df_try.columns) == 1 and len(str(df_try.columns[0])) > 30:
-                # rebuild text lines: header + column values
                 colname = str(df_try.columns[0])
                 lines = [colname] + df_try.iloc[:, 0].astype(str).tolist()
                 df = parse_mom_lines_to_df(lines)
@@ -449,28 +441,26 @@ def show_bulk_upload():
         st.exception(e)
         df = None
 
-    # ✅ Guard
+    # ✅ Guard (preview must exist)
     if df is None:
         st.error("❌ Could not read the uploaded file into a table. Only Excel (.xlsx) and CSV are supported for Bulk MOM Upload.")
         st.stop()
 
-    # Preview
     st.dataframe(df.head(50), use_container_width=True)
     st.caption(f"Rows: {len(df)}")
 
-    # Debug in sidebar (not on main page)
     if debug_mode:
         st.sidebar.markdown("### Debug: Bulk Upload")
         st.sidebar.write("df.shape:", df.shape)
         st.sidebar.write("df.columns:", df.columns.tolist())
 
-    # Column mapping
+    # -------- Column mapping --------
     st.markdown("---")
     st.subheader("🔗 Column Mapping")
     st.markdown("Map your file columns to task fields:")
 
     cols = df.columns.tolist()
-    x1, x2, x3, x4 = st.columns(3)
+    x1, x2, x3, x4 = st.columns(4)
 
     with x1:
         st.selectbox("Meeting ID / MOM No. Column", [""] + cols, key="subject_col")
@@ -486,7 +476,11 @@ def show_bulk_upload():
     with x4:
         st.selectbox("Priority Column (optional)", [""] + cols, key="priority_col")
 
-    # Require mapping
+    if debug_mode:
+        st.markdown("### ✅ Selected Mapping (Debug)")
+        st.json({k: st.session_state[k] for k in ["subject_col","owner_col","priority_col","due_date_col","remarks_col","cc_col"]})
+
+    # Require minimum mapping
     if (not st.session_state["owner_col"]
         or not st.session_state["remarks_col"]
         or not st.session_state["due_date_col"]):
@@ -495,11 +489,11 @@ def show_bulk_upload():
     st.markdown("---")
     st.subheader("💾 Bulk Upload Actions")
 
-    # Save upload file (optional)
     UPLOAD_DIR = Path("data") / "uploads"
     UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
     colA, colB = st.columns(2)
+
     with colA:
         if st.button("💾 Save Upload File", use_container_width=True, key="bulk_save_upload_btn"):
             ts = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -531,12 +525,21 @@ def show_bulk_upload():
                 st.error("❌ Could not initialize ExcelHandler")
                 st.stop()
 
+            # Default priority always available via session_state (prevents NameError)
+            default_priority_safe = st.session_state.get("bulk_default_priority", default_priority)
+
             for idx, row in df2.iterrows():
                 meeting_id_val = clean(row.get(st.session_state["subject_col"])) if st.session_state["subject_col"] else ""
                 owner_val = clean(row.get(st.session_state["owner_col"]))
                 remarks_val = clean(row.get(st.session_state["remarks_col"]))
                 cc_val = clean(row.get(st.session_state["cc_col"])) if st.session_state["cc_col"] else ""
                 due_val = parse_due_date(row.get(st.session_state["due_date_col"]))
+
+                # Priority: use file column if mapped, else default
+                priority_raw = clean(row.get(st.session_state["priority_col"])) if st.session_state["priority_col"] else ""
+                priority_final = (priority_raw or default_priority_safe).strip().upper()
+                if priority_final not in ["URGENT", "HIGH", "MEDIUM", "LOW"]:
+                    priority_final = default_priority_safe
 
                 # skip empty
                 if not owner_val and not remarks_val and not meeting_id_val:
@@ -548,8 +551,8 @@ def show_bulk_upload():
                     "meeting_id": meeting_id_val,
                     "Owner": owner_val or "Unassigned",
                     "Subject": subject_text,
-                    "Priority": default_priority,   # ✅ one-time priority for ALL tasks
-                    "Status": default_status,       # ✅ one-time status for ALL tasks
+                    "Priority": priority_final,
+                    "Status": default_status,
                     "Due Date": due_val,
                     "Remarks": remarks_val or f"Imported from {uploaded_file.name}",
                     "CC": cc_val
@@ -560,7 +563,7 @@ def show_bulk_upload():
 
             st.success(f"✅ Successfully created {created_count} tasks from {uploaded_file.name}")
             st.balloons()
-            
+
     def parse_due_date(v):
         # empty
         if v is None or (isinstance(v, float) and pd.isna(v)):
