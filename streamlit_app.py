@@ -385,23 +385,23 @@ def show_bulk_upload():
 
     def parse_mom_lines_to_df(lines: list[str]) -> pd.DataFrame:
         """
-        If CSV is actually 'one task per line' (like your screenshot),
-        convert it into a table with Remarks + Owner extracted from '@Name'.
+        If CSV is actually 'one task per line', convert it into a table with
+        Remarks + Owner extracted from '@Name'.
         """
         rows = []
         for line in lines:
             t = clean(line)
             if not t:
                 continue
+
             # remove bullets
             t = t.lstrip("*•- ").strip()
 
             owner = ""
             remarks = t
 
-            # extract @Owner if present
-            if "@"
-            in t:
+            # ✅ FIXED: this must be on one line
+            if "@" in t:
                 parts = t.rsplit("@", 1)
                 remarks = parts[0].strip()
                 owner = parts[1].strip()
@@ -414,7 +414,7 @@ def show_bulk_upload():
                 "CC": ""
             })
 
-        return pd.DataFrame(rows)
+         return pd.DataFrame(rows)
 
     # -------- read file --------
     try:
