@@ -688,62 +688,218 @@ def show_send_reminders():
     st.markdown("Send email reminders to task owners for pending tasks.")
     st.markdown("---")
     
-    # Import the function and check its signature
-    try:
-        from run_reminders import send_reminders
-        import inspect
-        sig = inspect.signature(send_reminders)
-        has_test_mode = 'test_mode' in sig.parameters
-    except Exception as e:
-        st.error(f"Failed to load reminder function: {e}")
-        has_test_mode = False
+    force_first = st.checkbox(
+        "Force first reminder for all pending tasks",
+        value=False,
+        key="force_first_reminder",
+        help="Send reminders even if tasks were recently reminded"
+    )
     
-    if has_test_mode:
-        col1, col2 = st.columns(2)
-        with col1:
-            force_first = st.checkbox(
-                "Force first reminder for all pending tasks",
-                value=False,
-                key="force_first_reminder",
-                help="Send reminders even if tasks were recently reminded"
-            )
-        with col2:
-            test_mode = st.checkbox(
-                "Test Mode (no emails sent)",
-                value=True,
-                key="test_mode",
-                help="Run without actually sending emails"
-            )
-    else:
-        force_first = st.checkbox(
-            "Force first reminder for all pending tasks",
-            value=False,
-            key="force_first_reminder",
-            help="Send reminders even if tasks were recently reminded"
-        )
-        test_mode = False
-        st.info("Note: Test mode is not available in the current version of the reminder function.")
+    # Note: Remove test_mode checkbox since function doesn't support it yet
+    # test_mode = st.checkbox(
+    #     "Test Mode (no emails sent)",
+    #     value=True,
+    #     key="test_mode",
+    #     help="Run without actually sending emails"
+    # )
     
     st.markdown("---")
     
-    if st.button("📤 Send Reminders Now", type="primary", use_container_width=True, key="send_reminders_btn"):
-        with st.spinner("Sending reminders..."):
+    col1, col2 = st.columns([1, 1])
+    
+    with col1:
+        if st.button("📤 Send Reminders Now", type="primary", use_container_width=True, key="send_reminders_btn"):
+            with st.spinner("Sending reminders..."):
+                try:
+                    # Try to import from the correct location
+                    try:
+                        from run_reminders import send_reminders
+                    except ImportError:
+                        # If run_reminders is in a different location
+                        import sys
+                        sys.path.append('.')
+                        from run_reminders import send_reminders
+                    
+                    # Call with only force_first parameter (backward compatible)
+                    try:
+                        # Try with force_first parameter
+                        result_msg = send_reminders(force_first=force_first)
+                    except TypeError as e:
+                        if "force_first" in str(e):
+                            # If function doesn't accept force_first, call without it
+                            result_msg = send_reminders()
+                        else:
+                            raise e
+                    
+                    # Display success message
+                    st.success("✅ Reminder process completed!")
+                    
+                    # Parse and display the result
+                    display_result(result_msg)
+                    
+                except Exception as e:
+                    st.error(f"❌ Error sending reminders: {e}")
+                    # Show more detailed error
+                    with st.expander("Show Error Details"):
+                        st.exception(e)
+    
+    with col2:
+        if st.button("🧪 Test Reminder Logic", type="secondary", use_container_width=True, key="test_logic_btn"):
+            with st.spinner("Testing reminder logic..."):
+                try:
+                    # Test without actually sending emails
+                    test_result = test_reminder_logic_safe()
+                    st.info("🧪 Test Results")
+                    display_result(test_result)
+                except Exception as e:
+                    st.error(f"❌ Test failed: {e}")
+
+def display_result(result_msg: str):
+    """Helper function to display results in a formatted way."""
+    if not result_msg:
+        return
+    
+    # Split by lines and format
+    lines = result_msg.split('\n')
+    
+    with st.expander("📋 View Detailed Results", expanded=True):
+        for line in lines:
+            line = line.strip()
+            if not line:
+                continue
+                
+            if line.startswith("## "):
+                st.subheader(line[3:])
+            elif line.startswith("### "):
+                st.markdown(f"**{line[4:]}**")
+            elif "✅" in line or "Sent" in line:
+                st.success(line)
+            elif "❌" in line or "Error" in line:
+                st.error(line)
+            elif "ℹ️" in line or "No tasks" in line:
+                st.info(line)
+            elif "**" in line:
+                st.markdown(line)
+            else:
+                st.write(line)
+
+def test_reminder_logic_safe():
+    """Safe test function that doesn't depend on test_mode parameter."""
+    try:
+        # Try to import from run_reminders
+        try:
+            from run_reminders import _parse_date, should_send_reminder, load_team_directory, resolve_owner_email
+        except ImportError:
+            return "❌ Could not import required functions from run_reminders"
+        
+        # Create some test tasks
+        from datetime import date, timedelta
+        today = date.today()
+        
+        test_tasks = [
+            {
+                "Owner": "Sunil",
+                "Status": "OPEN",
+                "Priority": "HIGH",
+                "Last Reminder Date": None,
+                "Created On": today.strftime("%Y-%m-%d"),
+                "Subject": "Test Task 1"
+            },
+            {
+                "Owner": "Praveen",
+                "Status": "PENDING",
+                "Priority": "MEDIUM",
+                "Last Reminder Date": (today - timedelta(days=5)).strftime("%Y-%m-%d"),
+                "Created On": (today - timedelta(days=10)).strftime("%Y-%m-%d"),
+                "Subject": "Test Task 2"
+            },
+            {
+                "Owner": "Unassigned",
+                "Status": "OPEN",
+                "Priority": "LOW",
+                "Last Reminder Date": None,
+                "Created On": today.strftime("%Y-%m-%d"),
+                "Subject": "Test Task 3"
+            },
+        ]
+        
+        # Test team directory
+        team_map = load_team_directory()
+        
+        results = []
+        results.append("## 🧪 Reminder Logic Test Results")
+        results.append(f"**Test Date:** {today}")
+        results.append(f"**Team Directory Entries:** {len(team_map)}")
+        results.append("")
+        results.append("### Task Analysis:")
+        
+        for i, task in enumerate(test_tasks, 1):
+            should_send, reason = should_send_reminder(task)
+            owner = task["Owner"]
+            email = resolve_owner_email(owner, team_map)
+            
+            results.append(f"**Task {i}: {task['Subject']}**")
+            results.append(f"  - Owner: {owner}")
+            results.append(f"  - Email Resolved: {'✅ ' + email if email else '❌ Not found'}")
+            results.append(f"  - Should Send: {'✅ Yes' if should_send else '❌ No'}")
+            results.append(f"  - Reason: {reason}")
+            results.append("")
+        
+        # Add diagnostic info
+        results.append("### 📁 File Check:")
+        import os
+        from pathlib import Path
+        
+        registry_path = Path("data/tasks_registry.xlsx")
+        team_path = Path("data/Team_Directory.xlsx")
+        
+        results.append(f"Registry exists: {'✅' if registry_path.exists() else '❌'} ({registry_path})")
+        results.append(f"Team Directory exists: {'✅' if team_path.exists() else '❌'} ({team_path})")
+        
+        if registry_path.exists():
+            import pandas as pd
             try:
-                if has_test_mode:
-                    result_msg = send_reminders(force_first=force_first, test_mode=test_mode)
-                else:
-                    result_msg = send_reminders(force_first=force_first)
-                
-                # Display results
-                if has_test_mode and test_mode:
-                    st.info("🧪 Test Mode Results")
-                else:
-                    st.success("✅ Reminders sent successfully!")
-                
-                # ... display the result_msg ...
+                df = pd.read_excel(registry_path)
+                results.append(f"Registry tasks: {len(df)}")
+                open_tasks = df[df['Status'].isin(['OPEN', 'PENDING', 'IN PROGRESS'])]
+                results.append(f"Active tasks: {len(open_tasks)}")
             except Exception as e:
-                st.error(f"❌ Error sending reminders: {e}")
-                st.exception(e)
+                results.append(f"❌ Error reading registry: {e}")
+        
+        return "\n".join(results)
+        
+    except Exception as e:
+        return f"❌ Test failed with error: {str(e)}"
+
+# Add this function to check email configuration
+def check_email_config():
+    """Check if email configuration is set up correctly."""
+    st.subheader("🔧 Email Configuration Check")
+    
+    try:
+        from run_reminders import _smtp_config
+        cfg = _smtp_config()
+        
+        # Hide password in display
+        cfg_display = cfg.copy()
+        if 'smtp_password' in cfg_display:
+            cfg_display['smtp_password'] = '***' if cfg_display['smtp_password'] else 'Not set'
+        
+        st.json(cfg_display)
+        
+        # Test basic connectivity
+        import smtplib
+        try:
+            server = smtplib.SMTP(cfg['smtp_server'], cfg['smtp_port'], timeout=5)
+            server.ehlo()
+            server.starttls()
+            st.success("✅ SMTP Server connection successful")
+            server.quit()
+        except Exception as e:
+            st.warning(f"⚠️ SMTP Connection test failed: {e}")
+            
+    except Exception as e:
+        st.error(f"❌ Error loading email config: {e}")
                     
 def show_settings():
     try:
