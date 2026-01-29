@@ -683,21 +683,122 @@ def show_bulk_upload():
             if created > 0:
                 st.balloons()
 
-def show_send_reminders():
-    st.header("📧 Send Task Reminders")
-    st.markdown("Send email reminders to task owners for pending tasks.")
-    st.markdown("---")
+def send_reminders(force_first: bool = False):
+    import pandas as pd
+    from datetime import datetime, date
 
-    if st.button("📤 Send Reminders Now", type="primary", use_container_width=True):
-        with st.spinner("Sending reminders..."):
+    REMINDER_FREQUENCY = {
+        "URGENT": 1,
+        "HIGH": 2,
+        "MEDIUM": 3,
+        "LOW": 7
+    }
+
+    excel_handler = get_excel_handler()  # or ExcelHandler(str(REGISTRY_FILE))
+    df = excel_handler.load_data()
+
+    if df is None or df.empty:
+        return "No tasks found in registry."
+
+    sent = 0
+    skipped = 0
+
+    # skip reasons
+    skip_status = 0
+    skip_no_owner = 0
+    skip_no_email = 0
+    skip_frequency = 0
+    skip_error = 0
+
+    today = date.today()
+
+    for idx, row in df.iterrows():
+        task = row.to_dict()
+
+        status = str(task.get("Status", "")).strip().upper()
+        if status not in ["OPEN", "PENDING", "IN PROGRESS"]:
+            skipped += 1
+            skip_status += 1
+            continue
+
+        owner = str(task.get("Owner", "")).strip()
+        if not owner or owner.upper() == "UNASSIGNED":
+            skipped += 1
+            skip_no_owner += 1
+            continue
+
+        # ---- Resolve owner email (IMPORTANT)
+        owner_email = resolve_owner_email(owner)  # implement using your Team_Directory.xlsx / mapping
+        if not owner_email:
+            skipped += 1
+            skip_no_email += 1
+            continue
+
+        priority = str(task.get("Priority", "MEDIUM")).strip().upper()
+        if priority not in REMINDER_FREQUENCY:
+            priority = "MEDIUM"
+
+        last_reminder = task.get("Last Reminder Date") or task.get("Last Reminder On")
+
+        def _parse_date(x):
+            if x is None or (isinstance(x, float) and pd.isna(x)):
+                return None
             try:
-                from run_reminders import send_reminders
-                result_msg = send_reminders()
-                st.success(f"✅ {result_msg}")
-            except Exception as e:
-                st.error(f"❌ Error: {e}")
-                st.exception(e)
+                return pd.to_datetime(x).date()
+            except Exception:
+                return None
 
+        last_date = _parse_date(last_reminder)
+
+        # ✅ Decide if we should send now
+        should_send = False
+
+        if force_first and last_date is None:
+            # first reminder immediately
+            should_send = True
+        elif last_date is None:
+            # default behavior: also send first reminder immediately
+            should_send = True
+        else:
+            days_since = (today - last_date).days
+            freq = REMINDER_FREQUENCY[priority]
+            if days_since >= freq:
+                should_send = True
+            else:
+                skipped += 1
+                skip_frequency += 1
+                continue
+
+        if not should_send:
+            skipped += 1
+            skip_frequency += 1
+            continue
+
+        # ---- send email (use your existing email processor)
+        try:
+            send_email_reminder(task, to_email=owner_email)  # implement in your code
+            sent += 1
+
+            # update reminder dates
+            now_str = datetime.now().strftime("%Y-%m-%d")
+            df.at[idx, "Last Reminder Date"] = now_str
+            df.at[idx, "Last Reminder On"] = now_str
+            df.at[idx, "Last Updated"] = now_str
+
+        except Exception as e:
+            skipped += 1
+            skip_error += 1
+            continue
+
+    # persist updates
+    excel_handler.save_data(df)
+
+    return (
+        f"Sent {sent} reminders, skipped {skipped} tasks | "
+        f"reasons: status={skip_status}, no_owner={skip_no_owner}, "
+        f"no_email={skip_no_email}, frequency={skip_frequency}, error={skip_error}"
+    )
+    
 def show_settings():
     try:
         settings_module = BASE_DIR / "views" / "settings_page.py"
