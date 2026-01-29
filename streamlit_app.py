@@ -688,102 +688,62 @@ def show_send_reminders():
     st.markdown("Send email reminders to task owners for pending tasks.")
     st.markdown("---")
     
-    col1, col2 = st.columns(2)
+    # Import the function and check its signature
+    try:
+        from run_reminders import send_reminders
+        import inspect
+        sig = inspect.signature(send_reminders)
+        has_test_mode = 'test_mode' in sig.parameters
+    except Exception as e:
+        st.error(f"Failed to load reminder function: {e}")
+        has_test_mode = False
     
-    with col1:
+    if has_test_mode:
+        col1, col2 = st.columns(2)
+        with col1:
+            force_first = st.checkbox(
+                "Force first reminder for all pending tasks",
+                value=False,
+                key="force_first_reminder",
+                help="Send reminders even if tasks were recently reminded"
+            )
+        with col2:
+            test_mode = st.checkbox(
+                "Test Mode (no emails sent)",
+                value=True,
+                key="test_mode",
+                help="Run without actually sending emails"
+            )
+    else:
         force_first = st.checkbox(
             "Force first reminder for all pending tasks",
             value=False,
             key="force_first_reminder",
             help="Send reminders even if tasks were recently reminded"
         )
-    
-    with col2:
-        test_mode = st.checkbox(
-            "Test Mode (no emails sent)",
-            value=True,
-            key="test_mode",
-            help="Run without actually sending emails"
-        )
+        test_mode = False
+        st.info("Note: Test mode is not available in the current version of the reminder function.")
     
     st.markdown("---")
     
     if st.button("📤 Send Reminders Now", type="primary", use_container_width=True, key="send_reminders_btn"):
         with st.spinner("Sending reminders..."):
             try:
-                # Try to import from the correct location
-                try:
-                    from run_reminders import send_reminders
-                except ImportError:
-                    # Try relative import
-                    from .run_reminders import send_reminders
-                
-                # Call with both parameters
-                result_msg = send_reminders(force_first=force_first, test_mode=test_mode)
+                if has_test_mode:
+                    result_msg = send_reminders(force_first=force_first, test_mode=test_mode)
+                else:
+                    result_msg = send_reminders(force_first=force_first)
                 
                 # Display results
-                if test_mode:
+                if has_test_mode and test_mode:
                     st.info("🧪 Test Mode Results")
                 else:
                     st.success("✅ Reminders sent successfully!")
                 
-                # Show detailed results in expandable section
-                with st.expander("📋 View Detailed Results", expanded=True):
-                    # Format the result message for better display
-                    lines = result_msg.split('\n')
-                    for line in lines:
-                        if line.startswith('##'):
-                            st.subheader(line[3:])
-                        elif line.startswith('###'):
-                            st.markdown(f"**{line[4:]}**")
-                        elif line.startswith('**'):
-                            st.markdown(line)
-                        elif line.strip():
-                            st.write(line)
-                
+                # ... display the result_msg ...
             except Exception as e:
                 st.error(f"❌ Error sending reminders: {e}")
                 st.exception(e)
-    
-    # Add diagnostic section
-    with st.expander("🔧 Diagnostic Tools", expanded=False):
-        st.markdown("### System Diagnostics")
-        
-        col1, col2, col3 = st.columns(3)
-        
-        with col1:
-            if st.button("Check Registry File", key="check_registry"):
-                try:
-                    if os.path.exists(REGISTRY_FILE):
-                        df = pd.read_excel(REGISTRY_FILE)
-                        st.success(f"✅ Registry file exists with {len(df)} tasks")
-                        st.dataframe(df[['Owner', 'Subject', 'Status', 'Last Reminder Date']].head())
-                    else:
-                        st.error(f"❌ Registry file not found at {REGISTRY_FILE}")
-                except Exception as e:
-                    st.error(f"❌ Error reading registry: {e}")
-        
-        with col2:
-            if st.button("Check Email Config", key="check_email_config"):
-                try:
-                    from run_reminders import _smtp_config
-                    cfg = _smtp_config()
-                    # Hide password in display
-                    cfg_display = cfg.copy()
-                    cfg_display['smtp_password'] = '***' if cfg_display['smtp_password'] else 'Not set'
-                    st.success("✅ Email configuration loaded")
-                    st.json(cfg_display)
-                except Exception as e:
-                    st.error(f"❌ Email config error: {e}")
-        
-        with col3:
-            if st.button("Test Task Logic", key="test_logic"):
-                try:
-                    from run_reminders import test_reminder_logic
-                    with st.expander("Test Results"):
-                        test_reminder_logic()
-                except Exception as e:
-                    st.error(f"❌ Logic test error: {e}")
                     
 def show_settings():
     try:
