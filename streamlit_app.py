@@ -326,15 +326,6 @@ def show_bulk_upload():
             return ""
         return str(v).strip()
 
-    def parse_due_date(v):
-        s = clean(v)
-        if not s:
-            return datetime.now().strftime("%Y-%m-%d")
-        try:
-            return pd.to_datetime(s, dayfirst=True, errors="raise").strftime("%Y-%m-%d")
-        except Exception:
-            return datetime.now().strftime("%Y-%m-%d")
-
     def normalize_priority(v, fallback="MEDIUM"):
         s = clean(v).upper()
         if not s:
@@ -345,9 +336,19 @@ def show_bulk_upload():
             return fallback
         return s
 
-    def parse_mom_lines_to_tasks(lines):
+    def parse_due_date_with_fallback(v, fallback_str):
+        """Parse due date; if missing/unparseable, return fallback_str."""
+        s = clean(v)
+        if not s:
+            return fallback_str
+        try:
+            return pd.to_datetime(s, dayfirst=True, errors="raise").strftime("%Y-%m-%d")
+        except Exception:
+            return fallback_str
+
+    def parse_mom_lines_to_tasks(lines, default_due_date_str, default_priority, default_status):
         """
-        Converts MOM text lines into task rows.
+        Converts MOM text lines into tasks.
         Supports patterns like:
           '* Are balances updated?@Sunil'
         Owner is extracted after '@' if present.
@@ -366,18 +367,19 @@ def show_bulk_upload():
                 remarks = left.strip()
                 owner = right.strip()
 
-            subject = (remarks.splitlines()[0] if remarks else "")[:80]
             if not remarks and not owner:
                 continue
+
+            subject = (remarks.splitlines()[0] if remarks else "")[:80]
 
             rows.append({
                 "meeting_id": "MOM-001",
                 "Owner": owner or "Unassigned",
                 "Subject": subject or "Task",
-                "Due Date": datetime.now().strftime("%Y-%m-%d"),
+                "Due Date": default_due_date_str,              # ✅ not upload date
                 "Remarks": remarks,
-                "Priority": "MEDIUM",
-                "Status": "OPEN",
+                "Priority": default_priority,                  # initial default; user can change per task
+                "Status": default_status,
                 "CC": ""
             })
         return rows
@@ -418,7 +420,8 @@ def show_bulk_upload():
 
     # ---------- processing defaults ----------
     st.subheader("⚙️ Processing Options")
-    c1, c2 = st.columns(2)
+    c1, c2, c3 = st.columns(3)
+
     with c1:
         default_status = st.selectbox(
             "Default Status (applies to all tasks)",
@@ -426,13 +429,23 @@ def show_bulk_upload():
             index=0,
             key="bulk_default_status"
         )
+
     with c2:
         default_priority = st.selectbox(
-            "Default Priority (used only if per-task priority not set)",
+            "Default Priority (initial value; can be changed per task below)",
             ["URGENT", "HIGH", "MEDIUM", "LOW"],
             index=2,
             key="bulk_default_priority"
         )
+
+    with c3:
+        default_due_date = st.date_input(
+            "Default Due Date (can be changed per task below)",
+            value=datetime.now().date(),
+            key="bulk_default_due_date"
+        )
+
+    default_due_date_str = default_due_date.strftime("%Y-%m-%d")
 
     st.markdown("---")
     st.subheader("👁️ File Preview")
@@ -456,7 +469,7 @@ def show_bulk_upload():
             if df_try.shape[1] == 1 and len(df_try.columns) == 1 and len(str(df_try.columns[0])) > 30:
                 colname = str(df_try.columns[0])
                 lines = [colname] + df_try.iloc[:, 0].astype(str).tolist()
-                tasks = parse_mom_lines_to_tasks(lines)
+                tasks = parse_mom_lines_to_tasks(lines, default_due_date_str, default_priority, default_status)
                 df = pd.DataFrame(tasks)
                 st.info("📄 Detected MOM text-style CSV (one task per line). Converted into tasks automatically.")
             else:
@@ -491,37 +504,47 @@ def show_bulk_upload():
 
         cols = df.columns.tolist()
         a, b, c = st.columns(3)
+
         with a:
             st.selectbox("Meeting ID / MOM No. Column (optional)", [""] + cols, key="subject_col")
             st.selectbox("Owner Column", [""] + cols, key="owner_col")
+
         with b:
-            st.selectbox("Due Date Column", [""] + cols, key="due_date_col")
+            st.selectbox("Due Date Column (optional)", [""] + cols, key="due_date_col")
             st.selectbox("Priority Column (optional)", [""] + cols, key="priority_col")
+
         with c:
             st.selectbox("Remarks Column (task details)", [""] + cols, key="remarks_col")
             st.selectbox("CC Column (optional)", [""] + cols, key="cc_col")
 
-        if not st.session_state["owner_col"] or not st.session_state["remarks_col"] or not st.session_state["due_date_col"]:
-            st.warning("Select at least Owner, Remarks, and Due Date columns to continue.")
+        if not st.session_state["owner_col"] or not st.session_state["remarks_col"]:
+            st.warning("Select at least Owner and Remarks columns to continue.")
             return
 
         # Build tasks list from mapped table
         df2 = df.dropna(how="all")
         tasks = []
+
         for idx, row in df2.iterrows():
             meeting_id_val = clean(row.get(st.session_state["subject_col"])) if st.session_state["subject_col"] else ""
             owner_val = clean(row.get(st.session_state["owner_col"]))
             remarks_val = clean(row.get(st.session_state["remarks_col"]))
             cc_val = clean(row.get(st.session_state["cc_col"])) if st.session_state["cc_col"] else ""
-            due_val = parse_due_date(row.get(st.session_state["due_date_col"]))
 
-            # skip truly empty
+            # Due Date from file if mapped, else default_due_date_str
+            if st.session_state["due_date_col"]:
+                due_val = parse_due_date_with_fallback(row.get(st.session_state["due_date_col"]), default_due_date_str)
+            else:
+                due_val = default_due_date_str
+
+            # Priority from file if mapped, else default_priority
+            priority_raw = clean(row.get(st.session_state["priority_col"])) if st.session_state["priority_col"] else ""
+            priority_final = normalize_priority(priority_raw, default_priority)
+
             if not owner_val and not remarks_val and not meeting_id_val:
                 continue
 
             subject_text = (remarks_val.splitlines()[0] if remarks_val else f"Task {idx+1}")[:80]
-            priority_raw = clean(row.get(st.session_state["priority_col"])) if st.session_state["priority_col"] else ""
-            priority_final = normalize_priority(priority_raw, default_priority)
 
             tasks.append({
                 "meeting_id": meeting_id_val,
@@ -540,16 +563,19 @@ def show_bulk_upload():
         # df already contains tasks (from MOM conversion)
         tasks = []
         df2 = df.dropna(how="all")
+
         for idx, row in df2.iterrows():
             owner_val = clean(row.get("Owner"))
             remarks_val = clean(row.get("Remarks"))
-            due_val = parse_due_date(row.get("Due Date"))
-            pr = normalize_priority(row.get("Priority"), default_priority)
 
             if not owner_val and not remarks_val:
                 continue
 
+            due_val = parse_due_date_with_fallback(row.get("Due Date"), default_due_date_str)
+            pr = normalize_priority(row.get("Priority"), default_priority)
+
             subject_text = clean(row.get("Subject")) or (remarks_val.splitlines()[0] if remarks_val else f"Task {idx+1}")[:80]
+
             tasks.append({
                 "meeting_id": clean(row.get("meeting_id")) or clean(row.get("Subject")) or "MOM-001",
                 "Owner": owner_val or "Unassigned",
@@ -560,11 +586,12 @@ def show_bulk_upload():
                 "Status": default_status,
                 "CC": clean(row.get("CC"))
             })
+
         st.session_state["bulk_tasks"] = tasks
 
-    # ---------- review / per-task priority ----------
+    # ---------- review / per-task priority + due date ----------
     st.markdown("---")
-    st.subheader("✅ Review Tasks (Priority per Task)")
+    st.subheader("✅ Review Tasks (Priority + Due Date per Task)")
 
     tasks_list = st.session_state.get("bulk_tasks", [])
     st.info(f"Tasks detected: {len(tasks_list)}")
@@ -579,20 +606,34 @@ def show_bulk_upload():
     for i, t in enumerate(tasks_list):
         with st.container(border=True):
             st.write(f"**{i+1}. {t.get('Subject','')}**")
-            c1, c2, c3 = st.columns([2, 1, 1])
+
+            c1, c2, c3, c4 = st.columns([2, 1, 1, 1])
+
             with c1:
-                st.caption(f"Owner: {t.get('Owner','')} | Due: {t.get('Due Date','')}")
+                st.caption(f"Owner: {t.get('Owner','')}")
+                st.caption(f"MOM: {t.get('meeting_id','')}")
+
             with c2:
                 pr = st.selectbox(
                     "Priority",
                     priorities,
-                    index=priorities.index(t.get("Priority","MEDIUM")) if t.get("Priority","MEDIUM") in priorities else 2,
+                    index=priorities.index(t.get("Priority", default_priority)) if t.get("Priority", default_priority) in priorities else 2,
                     key=f"priority_row_{i}"
                 )
+
             with c3:
-                st.caption(f"Status: {t.get('Status', default_status)}")
+                # Due date editable per row
+                try:
+                    current_due = pd.to_datetime(t.get("Due Date", default_due_date_str)).date()
+                except Exception:
+                    current_due = default_due_date
+                due = st.date_input("Due Date", value=current_due, key=f"due_row_{i}")
+
+            with c4:
+                st.caption(f"Status: {default_status}")
 
             t["Priority"] = pr
+            t["Due Date"] = due.strftime("%Y-%m-%d")
             t["Status"] = default_status
             edited.append(t)
 
@@ -600,10 +641,12 @@ def show_bulk_upload():
 
     st.markdown("---")
     st.subheader("💾 Bulk Upload Actions")
+
     UPLOAD_DIR = Path("data") / "uploads"
     UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
     colA, colB = st.columns(2)
+
     with colA:
         if st.button("💾 Save Upload File", use_container_width=True, key="bulk_save_upload_btn"):
             ts = datetime.now().strftime("%Y%m%d_%H%M%S")
