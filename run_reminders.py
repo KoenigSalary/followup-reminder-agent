@@ -278,14 +278,20 @@ def should_send_reminder(task, force_first=False):
 # -----------------------------
 # EMAIL SENDING - UPDATED FOR MULTI-OWNER
 # -----------------------------
-def send_email(to_email, subject, html_body):
-    """Send email with error handling."""
+def send_email(to_email, subject, html_body, debug=False):
+    """Send email with error handling. If debug is True, just log and return True."""
+    if debug:
+        print(f"  [DEBUG] Would send email to {to_email}")
+        print(f"  [DEBUG] Subject: {subject}")
+        return True, None
+    
     cfg = get_env_config()
     
     # Validate config
     if not cfg['smtp_username'] or not cfg['smtp_password']:
-        print("❌ SMTP credentials missing in .env file")
-        return False
+        error_msg = "❌ SMTP credentials missing in .env file"
+        print(error_msg)
+        return False, error_msg
     
     try:
         msg = MIMEMultipart('alternative')
@@ -302,12 +308,21 @@ def send_email(to_email, subject, html_body):
             server.send_message(msg)
         
         print(f"✅ Email sent to {to_email}")
-        return True
+        return True, None
         
+    except smtplib.SMTPAuthenticationError as e:
+        error_msg = f"❌ SMTP Authentication failed: {e}"
+        print(error_msg)
+        return False, error_msg
+    except smtplib.SMTPException as e:
+        error_msg = f"❌ SMTP error occurred: {e}"
+        print(error_msg)
+        return False, error_msg
     except Exception as e:
-        print(f"❌ Failed to send email to {to_email}: {e}")
-        return False
-
+        error_msg = f"❌ Failed to send email to {to_email}: {e}"
+        print(error_msg)
+        return False, error_msg
+        
 def build_email_html(task, specific_owner=None):
     """
     Build email HTML.
@@ -450,9 +465,12 @@ def send_reminders(force_first=False, debug=False):
                     subject_line, html = build_email_html(task, specific_owner=owner_name)
                     
                     if debug:
-                        print(f"    ✅ Would send to {owner_name} <{email}>")
-                        print(f"    Subject: {subject_line}")
+                        print(f"  ✅ Would send to {email}")
+                        print(f"  Subject: {mail_subject}")
                         success = True  # Pretend success in debug mode
+                        error_msg = None
+                else:
+                    success, error_msg = send_email(email, mail_subject, html)
                     else:
                         success = send_email(email, subject_line, html)
                     
@@ -549,6 +567,39 @@ def test_multi_owner():
                 print(f"    {owner} -> {email}")
         else:
             print(f"  ❌ No emails found")
+
+def test_smtp_connection():
+    """Test SMTP connection and return result string."""
+    cfg = get_env_config()
+    
+    if not cfg['smtp_username'] or not cfg['smtp_password']:
+        return "❌ SMTP credentials missing in .env file"
+    
+    try:
+        server = smtplib.SMTP(cfg['smtp_server'], cfg['smtp_port'], timeout=10)
+        server.ehlo()
+        server.starttls()
+        server.ehlo()
+        server.login(cfg['smtp_username'], cfg['smtp_password'])
+        
+        # Try to send a test email to ourselves
+        test_msg = MIMEMultipart('alternative')
+        test_msg['From'] = f"{cfg['sender_name']} <{cfg['sender_email']}>"
+        test_msg['To'] = cfg['smtp_username']
+        test_msg['Subject'] = "Test email from Follow-up Agent"
+        test_msg.attach(MIMEText("<h1>Test Email</h1><p>This is a test to verify SMTP settings.</p>", 'html'))
+        
+        server.send_message(test_msg)
+        server.quit()
+        
+        return f"✅ SMTP test successful! Test email sent to {cfg['smtp_username']}"
+        
+    except smtplib.SMTPAuthenticationError as e:
+        return f"❌ SMTP Authentication failed: {e}"
+    except smtplib.SMTPException as e:
+        return f"❌ SMTP error occurred: {e}"
+    except Exception as e:
+        return f"❌ Failed to test SMTP: {e}"
 
 def fix_missing_mappings():
     """Create a mapping file for missing owners."""
