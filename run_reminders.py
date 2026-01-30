@@ -114,7 +114,7 @@ def load_team_directory():
     except Exception as e:
         print(f"❌ Error loading team directory: {e}")
         return {}
-
+        
 # -----------------------------
 # EMAIL RESOLUTION - WITH MULTI-OWNER SUPPORT
 # -----------------------------
