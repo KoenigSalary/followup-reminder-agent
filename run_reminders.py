@@ -1,4 +1,4 @@
-# run_reminders.py - UPDATED WITH PROPER MATCHING
+# run_reminders.py - UPDATED TO USE CONFIG
 import os
 import smtplib
 from email.mime.multipart import MIMEMultipart
@@ -8,36 +8,23 @@ import pandas as pd
 import numpy as np
 from pathlib import Path
 
-# ==== ADD THIS SECTION HERE ====
-# Hardcoded fallback emails - UPDATE THESE WITH YOUR TEAM'S EMAILS!
-HARDCODED_EMAILS = {
-    # Based on your Team Directory
-    "admin": "admin@koenig-solutions.com",
-    "sunil": "sunilkumar.kushwaha@koenig-solutions.com",
-    "sunilkumar": "sunilkumar.kushwaha@koenig-solutions.com",
-    "sarika": "sarika.gupta@koenig-solutions.com",
-    "ritika": "ritika.bhalla@koenig-solutions.com",
-    "tripti": "tripti@koenig-solutions.com",
-    "jony": "jony.saini@koenig-solutions.com",
-    "anurag": "anurag.chauhan@koenig-solutions.com",
-    "ajay": "ajay.rawat@koenig-solutions.com",
-    "aditya": "aditya.singh@koenig-solutions.com",
-    "jatin": "jatin.khurana@koenig-solutions.com",
-    "praveen": "praveen.chaudhary@koenig-solutions.com",
-    "vipin": "vipin.nautiyal@koenig-solutions.com",
-    "tamanna": "tamanna.alisha@koenig-solutions.com",
-    "nishant": "nishant.yash@koenig-solutions.com",
-    "shkelzen": "shkelzen.sadiku@koenig-solutions.com",
-    "nupur": "nupur.munjal@koenig-solutions.com",
-    "vardaan": "vardaan.aggarwal@koenig-solutions.com",
-    "dimna": "dimna.k@koenig-solutions.com",  # UPDATE with actual email
-        
-    # Common variations
-    "praveen kumar": "praveen.chaudhary@koenig-solutions.com",
-    "anurag chauhan": "anurag.chauhan@koenig-solutions.com",
-    "ajay rawat": "ajay.rawat@koenig-solutions.com",
-}
+# ========== IMPORT FROM CONFIG ==========
+try:
+    from config import HARDCODED_EMAILS, REMINDER_FREQUENCY_DAYS
+    print("✅ Loaded settings from config.py")
+except ImportError as e:
+    print(f"⚠️ Could not import from config.py: {e}")
+    # Fallback defaults
+    HARDCODED_EMAILS = {}
+    REMINDER_FREQUENCY_DAYS = {
+        "URGENT": 1,
+        "HIGH": 2,
+        "MEDIUM": 3,
+        "LOW": 7,
+    }
+# =========================================
 
+# Import based on your structure
 try:
     from utils.excel_handler import ExcelHandler
 except ImportError:
@@ -62,16 +49,6 @@ TEAM_FILE = DATA_DIR / "Team_Directory.xlsx"
 DATA_DIR.mkdir(exist_ok=True)
 
 # -----------------------------
-# SETTINGS
-# -----------------------------
-REMINDER_FREQUENCY_DAYS = {
-    "URGENT": 1,
-    "HIGH": 2,
-    "MEDIUM": 3,
-    "LOW": 7,
-}
-
-# -----------------------------
 # ENV CONFIG
 # -----------------------------
 def get_env_config():
@@ -90,7 +67,7 @@ def get_env_config():
     }
 
 # -----------------------------
-# TEAM DIRECTORY - UPDATED FOR YOUR STRUCTURE
+# TEAM DIRECTORY
 # -----------------------------
 def load_team_directory():
     """Load team directory with proper matching for your structure."""
@@ -103,7 +80,6 @@ def load_team_directory():
         print(f"✅ Loaded team directory with {len(df)} rows")
         
         # Your columns: username, full_name, email
-        # Build comprehensive mapping
         mapping = {}
         
         for _, row in df.iterrows():
@@ -112,43 +88,27 @@ def load_team_directory():
             full_name = str(row.get('full_name', '')).strip()
             email = str(row.get('email', '')).strip().lower()
             
-            # Skip if no email
             if not email or '@' not in email:
                 continue
             
-            # Add mappings for different variations
+            # Add mappings
             
-            # 1. Username (if exists)
+            # 1. Username
             if username:
                 mapping[username] = email
-                # Also add without any numbers if present
-                username_base = ''.join([c for c in username if not c.isdigit()])
-                if username_base and username_base != username:
-                    mapping[username_base] = email
             
             # 2. Full name
             if full_name:
-                # Full name lowercase
                 mapping[full_name.lower()] = email
                 
-                # First name only (lowercase)
+                # First name only
                 first_name = full_name.split()[0].lower() if ' ' in full_name else full_name.lower()
                 mapping[first_name] = email
                 
-                # First name with first letter capitalized (common in tasks)
+                # First name capitalized
                 mapping[first_name.capitalize()] = email
-                
-                # Also try with common variations
-                # Remove any special characters
-                clean_first = ''.join(c for c in first_name if c.isalpha())
-                if clean_first and clean_first != first_name:
-                    mapping[clean_first] = email
         
         print(f"✅ Created {len(mapping)} email mappings")
-        print(f"📋 Sample mappings (first 5):")
-        for key, value in list(mapping.items())[:5]:
-            print(f"  {key} -> {value}")
-        
         return mapping
         
     except Exception as e:
@@ -156,12 +116,12 @@ def load_team_directory():
         return {}
 
 # -----------------------------
-# EMAIL RESOLUTION - IMPROVED
+# EMAIL RESOLUTION - USING CONFIG
 # -----------------------------
 def resolve_owner_email(owner: str, team_map: dict) -> str | None:
     """
-    Resolve owner name to email with multiple strategies.
-    Handles: single names, multiple comma-separated names, etc.
+    Resolve owner name to email.
+    Uses team_map first, then HARDCODED_EMAILS from config.
     """
     if not owner or pd.isna(owner):
         return None
@@ -170,31 +130,25 @@ def resolve_owner_email(owner: str, team_map: dict) -> str | None:
     if not owner_str or owner_str.upper() == "UNASSIGNED":
         return None
     
-    print(f"🔍 Resolving email for: '{owner_str}'")
+    # Try team map first
+    # 1. Exact match (lowercase)
+    if owner_str.lower() in team_map:
+        return team_map[owner_str.lower()]
     
-    # Strategy 1: Handle multiple owners (comma-separated)
-    if ',' in owner_str or ';' in owner_str or '&' in owner_str:
-        # Split by common delimiters
-        import re
-        parts = re.split(r'[,;&]', owner_str)
-        emails = []
-        
-        for part in parts:
-            part_clean = part.strip()
-            if part_clean:
-                email = resolve_single_owner(part_clean, team_map)
-                if email and email not in emails:
-                    emails.append(email)
-        
-        if emails:
-            # For now, return first email found
-            # TODO: Could send to multiple recipients
-            print(f"  ✅ Found {len(emails)} emails, using: {emails[0]}")
-            return emails[0]
-        return None
+    # 2. Try first name
+    first_name = owner_str.split()[0].lower() if ' ' in owner_str else owner_str.lower()
+    if first_name in team_map:
+        return team_map[first_name]
     
-    # Strategy 2: Single owner
-    return resolve_single_owner(owner_str, team_map)
+    # 3. Try HARDCODED_EMAILS from config
+    if owner_str.lower() in HARDCODED_EMAILS:
+        return HARDCODED_EMAILS[owner_str.lower()]
+    
+    if first_name in HARDCODED_EMAILS:
+        return HARDCODED_EMAILS[first_name]
+    
+    print(f"⚠️ No email found for owner: '{owner_str}'")
+    return None
 
 def resolve_single_owner(owner_str: str, team_map: dict) -> str | None:
     """Resolve a single owner name to email."""
