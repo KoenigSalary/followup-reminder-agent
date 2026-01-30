@@ -550,6 +550,95 @@ def test_multi_owner():
         else:
             print(f"  ❌ No emails found")
 
+def fix_missing_mappings():
+    """Create a mapping file for missing owners."""
+    if not REGISTRY_FILE.exists():
+        return "❌ Registry file not found"
+    
+    if not TEAM_FILE.exists():
+        return "❌ Team directory not found"
+    
+    try:
+        # Load data
+        tasks_df = pd.read_excel(REGISTRY_FILE)
+        team_df = pd.read_excel(TEAM_FILE)
+        
+        # Get unique active task owners
+        active_statuses = ['OPEN', 'PENDING', 'IN PROGRESS']
+        active_tasks = tasks_df[tasks_df['Status'].isin(active_statuses)]
+        unique_owners = active_tasks['Owner'].dropna().unique()
+        
+        # Create mapping dictionary from team directory
+        team_map = {}
+        for _, row in team_df.iterrows():
+            full_name = str(row.get('full_name', '')).strip()
+            email = str(row.get('email', '')).strip().lower()
+            
+            if full_name and email:
+                # Map by first name
+                first_name = full_name.split()[0].lower()
+                team_map[first_name] = email
+                
+                # Map by full name
+                team_map[full_name.lower()] = email
+        
+        # Find missing mappings
+        missing = []
+        for owner in unique_owners:
+            if not isinstance(owner, str):
+                continue
+                
+            owner_clean = owner.strip().lower()
+            if not owner_clean or owner_clean == 'unassigned':
+                continue
+            
+            # Split multi-owners
+            import re
+            parts = re.split(r'[,;&]', owner_clean)
+            
+            for part in parts:
+                part_clean = part.strip()
+                if not part_clean:
+                    continue
+                
+                # Check if owner exists in team_map
+                found = False
+                for key in team_map.keys():
+                    if part_clean in key or key in part_clean:
+                        found = True
+                        break
+                
+                if not found and part_clean not in missing:
+                    missing.append(part_clean)
+        
+        # Create fix file
+        if missing:
+            fix_data = []
+            for owner in missing:
+                # Try to guess email
+                first_part = owner.split()[0].lower() if ' ' in owner else owner.lower()
+                suggested_email = f"{first_part}@koenig-solutions.com"
+                
+                fix_data.append({
+                    'task_owner': owner,
+                    'suggested_full_name': owner.title(),
+                    'suggested_email': suggested_email,
+                    'actual_full_name': '',
+                    'actual_email': '',
+                    'notes': 'Add to Team_Directory.xlsx'
+                })
+            
+            fix_df = pd.DataFrame(fix_data)
+            fix_path = DATA_DIR / 'missing_mappings.xlsx'
+            fix_df.to_excel(fix_path, index=False)
+            
+            return f"✅ Created fix file with {len(missing)} missing mappings: {fix_path}"
+        else:
+            return "✅ All owners have email mappings!"
+        
+    except Exception as e:
+        return f"❌ Error: {e}"
+
 # -----------------------------
 # RUN IF EXECUTED DIRECTLY
 # -----------------------------
