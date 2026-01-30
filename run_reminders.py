@@ -7,6 +7,7 @@ from datetime import datetime, date
 import pandas as pd
 import numpy as np
 from pathlib import Path
+from config import HARDCODED_EMAILS, REMINDER_FREQUENCY_DAYS
 
 # ========== IMPORT FROM CONFIG ==========
 try:
