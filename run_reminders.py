@@ -8,7 +8,46 @@ import pandas as pd
 import numpy as np
 from pathlib import Path
 
-# Import based on your structure
+# run_reminders.py
+import os
+import smtplib
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
+from datetime import datetime, date
+import pandas as pd
+import numpy as np
+from pathlib import Path
+
+# ==== ADD THIS SECTION HERE ====
+# Hardcoded fallback emails - UPDATE THESE WITH YOUR TEAM'S EMAILS!
+HARDCODED_EMAILS = {
+    # Based on your Team Directory
+    "admin": "admin@koenig-solutions.com",
+    "sunil": "sunilkumar.kushwaha@koenig-solutions.com",
+    "sunilkumar": "sunilkumar.kushwaha@koenig-solutions.com",
+    "sarika": "sarika.gupta@koenig-solutions.com",
+    "ritika": "ritika.bhalla@koenig-solutions.com",
+    "tripti": "tripti@koenig-solutions.com",
+    "jony": "jony.saini@koenig-solutions.com",
+    "anurag": "anurag.chauhan@koenig-solutions.com",
+    "ajay": "ajay.rawat@koenig-solutions.com",
+    "aditya": "aditya.singh@koenig-solutions.com",
+    "jatin": "jatin.khurana@koenig-solutions.com",
+    "praveen": "praveen.chaudhary@koenig-solutions.com",
+    "vipin": "vipin.nautiyal@koenig-solutions.com",
+    "tamanna": "tamanna.alisha@koenig-solutions.com",
+    "nishant": "nishant.yash@koenig-solutions.com",
+    "shkelzen": "shkelzen.sadiku@koenig-solutions.com",
+    "nupur": "nupur.munjal@koenig-solutions.com",
+    "vardaan": "vardaan.aggarwal@koenig-solutions.com",
+    "dimna": "dimna.k@koenig-solutions.com",  # UPDATE with actual email
+        
+    # Common variations
+    "praveen kumar": "praveen.chaudhary@koenig-solutions.com",
+    "anurag chauhan": "anurag.chauhan@koenig-solutions.com",
+    "ajay rawat": "ajay.rawat@koenig-solutions.com",
+}
+
 try:
     from utils.excel_handler import ExcelHandler
 except ImportError:
