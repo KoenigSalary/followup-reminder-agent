@@ -688,6 +688,18 @@ def show_send_reminders():
     st.markdown("Send email reminders to task owners for pending tasks.")
     st.markdown("---")
     
+    # SMTP Test Section
+    with st.expander("🔧 SMTP Configuration Test", expanded=True):
+        if st.button("Test SMTP Connection", key="test_smtp_connection"):
+            try:
+                from run_reminders import test_smtp_connection
+                result = test_smtp_connection()
+                st.write(result)
+            except Exception as e:
+                st.error(f"❌ Error: {e}")
+    
+    st.markdown("---")
+    
     # Quick actions
     col1, col2, col3 = st.columns(3)
     
@@ -698,7 +710,6 @@ def show_send_reminders():
                 import io
                 import sys
                 
-                # Capture output
                 old_stdout = sys.stdout
                 sys.stdout = buffer = io.StringIO()
                 
@@ -710,34 +721,24 @@ def show_send_reminders():
                 st.code(output)
             except Exception as e:
                 st.error(f"❌ Error: {e}")
-      
+    
     with col2:
         if st.button("🛠️ Check Missing Owners", use_container_width=True):
             try:
-                from fix_utils import check_and_fix_missing_owners
-                result = check_and_fix_missing_owners()
+                # Try to import fix_missing_mappings, fallback to alternative
+                try:
+                    from run_reminders import fix_missing_mappings
+                    result = fix_missing_mappings()
+                except ImportError:
+                    # Use alternative function
+                    result = find_missing_owners()
                 
-                # Display result
-                lines = result.split('\n')
-                for line in lines:
-                    if line.startswith('⚠️'):
-                        st.warning(line)
-                    elif line.startswith('✅'):
-                        st.success(line)
-                    elif line.startswith('❌'):
-                        st.error(line)
-                    elif line.startswith('📁'):
-                        st.info(line)
-                    elif line.startswith('💡'):
-                        st.info(line)
-                    elif line.strip():
-                        st.write(line)
-                        
+                st.success(result)
             except Exception as e:
                 st.error(f"❌ Error: {e}")
     
     with col3:
-        debug_mode = st.checkbox("Debug Mode", value=False)  # Set to False to send real emails
+        debug_mode = st.checkbox("Debug Mode", value=True)
     
     st.markdown("---")
     
@@ -761,7 +762,7 @@ def show_send_reminders():
                 
             except Exception as e:
                 st.error(f"❌ Error sending reminders: {e}")
-
+                
 def find_missing_owners():
     """Alternative function to find missing owners."""
     import pandas as pd
