@@ -8,16 +8,6 @@ import pandas as pd
 import numpy as np
 from pathlib import Path
 
-# run_reminders.py
-import os
-import smtplib
-from email.mime.multipart import MIMEMultipart
-from email.mime.text import MIMEText
-from datetime import datetime, date
-import pandas as pd
-import numpy as np
-from pathlib import Path
-
 # ==== ADD THIS SECTION HERE ====
 # Hardcoded fallback emails - UPDATE THESE WITH YOUR TEAM'S EMAILS!
 HARDCODED_EMAILS = {
