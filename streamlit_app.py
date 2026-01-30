@@ -694,7 +694,7 @@ def show_send_reminders():
     with col1:
         if st.button("🔍 Test Email Matching", use_container_width=True):
             try:
-                from run_reminders import test_email_matching
+                from run_reminders import test_multi_owner
                 import io
                 import sys
                 
@@ -702,7 +702,7 @@ def show_send_reminders():
                 old_stdout = sys.stdout
                 sys.stdout = buffer = io.StringIO()
                 
-                test_email_matching()
+                test_multi_owner()
                 
                 sys.stdout = old_stdout
                 output = buffer.getvalue()
@@ -712,10 +712,16 @@ def show_send_reminders():
                 st.error(f"❌ Error: {e}")
     
     with col2:
-        if st.button("🛠️ Fix Missing Mappings", use_container_width=True):
+        if st.button("🛠️ Check Missing Owners", use_container_width=True):
             try:
-                from run_reminders import fix_missing_mappings
-                result = fix_missing_mappings()
+                # Try to import fix_missing_mappings, fallback to alternative
+                try:
+                    from run_reminders import fix_missing_mappings
+                    result = fix_missing_mappings()
+                except ImportError:
+                    # Use alternative function
+                    result = find_missing_owners()
+                
                 st.success(result)
             except Exception as e:
                 st.error(f"❌ Error: {e}")
@@ -745,9 +751,68 @@ def show_send_reminders():
                 
             except Exception as e:
                 st.error(f"❌ Error sending reminders: {e}")
-                # Show troubleshooting tips directly
-                show_troubleshooting_directly()
 
+def find_missing_owners():
+    """Alternative function to find missing owners."""
+    import pandas as pd
+    from pathlib import Path
+    
+    registry_path = Path("data/tasks_registry.xlsx")
+    team_path = Path("data/Team_Directory.xlsx")
+    
+    if not registry_path.exists():
+        return "❌ Registry file not found"
+    
+    if not team_path.exists():
+        return "❌ Team directory not found"
+    
+    try:
+        # Load data
+        tasks_df = pd.read_excel(registry_path)
+        team_df = pd.read_excel(team_path)
+        
+        # Get unique active task owners
+        active_statuses = ['OPEN', 'PENDING', 'IN PROGRESS']
+        active_tasks = tasks_df[tasks_df['Status'].isin(active_statuses)]
+        unique_owners = active_tasks['Owner'].dropna().unique()
+        
+        # Create mapping dictionary from team directory
+        team_map = {}
+        for _, row in team_df.iterrows():
+            full_name = str(row.get('full_name', '')).strip()
+            email = str(row.get('email', '')).strip().lower()
+            
+            if full_name and email:
+                # Map by first name
+                first_name = full_name.split()[0].lower()
+                team_map[first_name] = email
+        
+        # Find missing mappings
+        missing = []
+        for owner in unique_owners:
+            if not isinstance(owner, str):
+                continue
+                
+            owner_clean = owner.strip().lower()
+            if not owner_clean or owner_clean == 'unassigned':
+                continue
+            
+            # Check each part for multi-owner
+            parts = owner_clean.split(',')
+            for part in parts:
+                part_clean = part.strip()
+                if part_clean and part_clean not in team_map:
+                    if part_clean not in missing:
+                        missing.append(part_clean)
+        
+        if missing:
+            return f"⚠️ Found {len(missing)} missing owners: {', '.join(missing[:10])}..."
+        else:
+            return "✅ All owners have email mappings!"
+        
+    except Exception as e:
+        return f"❌ Error: {e}"
+        
 def display_reminder_results(result, debug_mode=False):
     """Display reminder results."""
     if debug_mode:
