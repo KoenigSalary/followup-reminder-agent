@@ -745,7 +745,8 @@ def show_send_reminders():
                 
             except Exception as e:
                 st.error(f"❌ Error sending reminders: {e}")
-                show_troubleshooting()
+                # Show troubleshooting tips directly
+                show_troubleshooting_directly()
 
 def display_reminder_results(result, debug_mode=False):
     """Display reminder results."""
@@ -772,12 +773,10 @@ def display_reminder_results(result, debug_mode=False):
             elif line.strip():
                 st.write(line)
     
-    # Show summary
-    sent = 0
-    for line in lines:
-        if "Reminders Sent:" in line:
-            sent = int(line.split(":")[1].strip().split()[0])
-            break
+    # Show summary - FIXED: Use regex to extract number
+    import re
+    sent_match = re.search(r"Reminders Sent:\s*(\d+)", result)
+    sent = int(sent_match.group(1)) if sent_match else 0
     
     if sent > 0:
         if debug_mode:
@@ -790,6 +789,31 @@ def display_reminder_results(result, debug_mode=False):
         # Show specific advice
         if "no_email" in result.lower():
             st.info("💡 Tip: Run 'Test Email Matching' to see which owners need email addresses")
+
+def show_troubleshooting_directly():
+    """Show troubleshooting tips directly."""
+    with st.expander("🛠️ Troubleshooting Guide", expanded=True):
+        st.markdown("""
+        ### Common Issues & Solutions:
+        
+        **1. Emails not being sent:**
+        - Check your `.env` file has correct SMTP credentials
+        - For Office365, use app-specific password
+        - Test with Debug Mode first
+        
+        **2. "Dimna" not found in team directory:**
+        - Add "Dimna" to your Team_Directory.xlsx
+        - Or add to HARDCODED_EMAILS in run_reminders.py
+        
+        **3. Tasks with DELETED status:**
+        - These are correctly skipped
+        - Only OPEN/PENDING/IN PROGRESS tasks get reminders
+        
+        **4. Email not found in Sent Box:**
+        - Check spam/junk folder
+        - Verify SMTP settings are correct
+        - Test with a personal email first
+        """)
             
 def test_reminder_logic_safe():
     """Safe test function that doesn't depend on test_mode parameter."""
