@@ -1,3 +1,4 @@
+# config.py
 import os
 from pathlib import Path
 import pandas as pd
@@ -41,6 +42,48 @@ SMTP_USERNAME = DEFAULT_EMAIL
 EMAIL_PASSWORD_ENV_KEY = "CEO_AGENT_EMAIL_PASSWORD"
 
 SENDER_NAME = "Praveen Chaudhary"
+
+# -------------------------------------------------
+# HARDCODED EMAIL MAPPINGS
+# -------------------------------------------------
+# Add this new section for fallback email mappings
+HARDCODED_EMAILS = {
+    # From your Team Directory
+    "admin": "admin@koenig-solutions.com",
+    "sunil": "sunilkumar.kushwaha@koenig-solutions.com",
+    "sunilkumar": "sunilkumar.kushwaha@koenig-solutions.com",
+    "sarika": "sarika.gupta@koenig-solutions.com",
+    "ritika": "ritika.bhalla@koenig-solutions.com",
+    "tripti": "tripti@koenig-solutions.com",
+    "jony": "jony.saini@koenig-solutions.com",
+    "anurag": "anurag.chauhan@koenig-solutions.com",
+    "ajay": "ajay.rawat@koenig-solutions.com",
+    "aditya": "aditya.singh@koenig-solutions.com",
+    "jatin": "jatin.khurana@koenig-solutions.com",
+    "praveen": "praveen.chaudhary@koenig-solutions.com",
+    "vipin": "vipin.nautiyal@koenig-solutions.com",
+    "tamanna": "tamanna.alisha@koenig-solutions.com",
+    "nishant": "nishant.yash@koenig-solutions.com",
+    "shkelzen": "shkelzen.sadiku@koenig-solutions.com",
+    "nupur": "nupur.munjal@koenig-solutions.com",
+    "vardaan": "vardaan.aggarwal@koenig-solutions.com",
+    "dimna": "dimna.k@koenig-solutions.com",  # UPDATE with actual email
+     
+    # Common variations
+    "praveen kumar": "praveen.chaudhary@koenig-solutions.com",
+    "anurag chauhan": "anurag.chauhan@koenig-solutions.com",
+    "ajay rawat": "ajay.rawat@koenig-solutions.com",
+}
+
+# -------------------------------------------------
+# Reminder Settings
+# -------------------------------------------------
+REMINDER_FREQUENCY_DAYS = {
+    "URGENT": 1,
+    "HIGH": 2,
+    "MEDIUM": 3,
+    "LOW": 7,
+}
 
 # -------------------------------------------------
 # Validation (Cloud-safe)
