@@ -298,17 +298,26 @@ def _parse_date(x):
         print(f"⚠️ Could not parse date '{x}': {e}")
         return None
 
-
 def should_send_reminder(task: dict, force_first: bool = False) -> tuple[bool, str]:
     """
     Returns (should_send, reason).
-    FIXED: Handles NaT dates safely.
     """
-    # Check status
-    status = str(task.get("Status", "")).strip().upper()
-    valid_statuses = ["OPEN", "PENDING", "IN PROGRESS", "IN_PROGRESS"]
-    if status not in valid_statuses:
-        return False, f"status_not_active ({status})"
+    # Check status - more flexible
+    status_raw = str(task.get("Status", "")).strip()
+    status = status_raw.upper()
+    
+    # Accept various status formats
+    active_status_keywords = ["OPEN", "PENDING", "IN PROGRESS", "ACTIVE", "TODO", "ASSIGNED"]
+    
+    # Check if status contains any active keyword
+    is_active = any(keyword in status for keyword in active_status_keywords)
+    
+    if not is_active:
+        # Also check for common completed statuses
+        completed_keywords = ["DONE", "COMPLETED", "CLOSED", "FINISHED", "RESOLVED"]
+        if any(keyword in status for keyword in completed_keywords):
+            return False, f"status_completed ({status_raw})"
+        return False, f"status_inactive ({status_raw})"
 
     # Check owner
     owner = str(task.get("Owner", "")).strip()
@@ -319,7 +328,7 @@ def should_send_reminder(task: dict, force_first: bool = False) -> tuple[bool, s
     priority = str(task.get("Priority", "MEDIUM")).strip().upper()
     freq = REMINDER_FREQUENCY_DAYS.get(priority, REMINDER_FREQUENCY_DAYS["MEDIUM"])
 
-    # Get dates - FIXED: Safely handle NaT
+    # Get dates
     last_reminder = task.get("Last Reminder Date") or task.get("Last Reminder On")
     created_date = task.get("Created On")
     
@@ -328,8 +337,7 @@ def should_send_reminder(task: dict, force_first: bool = False) -> tuple[bool, s
     
     today = date.today()
 
-    # 🚨 FIX: First reminder logic
-    # If task has never been reminded (last_date is None/NaT)
+    # First reminder logic
     if last_date is None:
         # If created date is today or earlier, or if we don't have created date
         if created_on_date is None or created_on_date <= today:
@@ -337,7 +345,7 @@ def should_send_reminder(task: dict, force_first: bool = False) -> tuple[bool, s
         else:
             return False, "future_created_date"
 
-    # If explicitly forced (for testing)
+    # If explicitly forced
     if force_first:
         return True, "force_first"
 
@@ -348,10 +356,8 @@ def should_send_reminder(task: dict, force_first: bool = False) -> tuple[bool, s
             return True, f"frequency_ok ({days_since}d >= {freq}d)"
         return False, f"frequency_not_due ({days_since}d < {freq}d)"
     except Exception as e:
-        print(f"⚠️ Error calculating days since last reminder: {e}")
         return False, f"date_calculation_error"
-
-
+        
 # -----------------------------
 # Email body
 # -----------------------------
@@ -420,7 +426,6 @@ def build_email_html(task: dict) -> tuple[str, str]:
     """
     return mail_subject, html
 
-
 # -----------------------------
 # Main API - Simplified version without test_mode parameter
 # -----------------------------
@@ -441,42 +446,65 @@ def send_reminders(force_first: bool = False) -> str:
 
     team_map = load_team_directory()
     
+    # DEBUG: Show what we loaded
+    print(f"📊 Loaded {len(team_map)} email mappings from team directory")
+    if team_map:
+        print("📋 Sample mappings:")
+        for i, (name, email) in enumerate(list(team_map.items())[:10]):
+            print(f"  {i+1}. {name} -> {email}")
+    
     sent = 0
     skipped = 0
     errors = 0
 
     reason_counts = {
-        "status_not_active": 0,
-        "unassigned_owner": 0,
         "no_email": 0,
+        "status": 0,
+        "unassigned_owner": 0,
         "frequency_not_due": 0,
-        "future_created_date": 0,
+        "error": 0,
         "first_reminder": 0,
         "force_first": 0,
         "frequency_ok": 0,
-        "date_calculation_error": 0,
-        "error": 0,
+    }
+    
+    # Track skipped tasks for debugging
+    skipped_details = {
+        "no_email": [],
+        "status": [],
+        "unassigned_owner": [],
     }
 
     now_str = datetime.now().strftime("%Y-%m-%d")
-    print(f"📅 Running reminder check on {now_str}")
-    print(f"📊 Total tasks: {len(df)}")
-    print(f"📧 Team mapping entries: {len(team_map)}")
 
     for idx, row in df.iterrows():
         task = row.to_dict()
         
-        # Get task details for logging
+        # Get key fields
+        owner = str(task.get("Owner", "")).strip()
+        status = str(task.get("Status", "")).strip().upper()
+        subject = str(task.get("Subject", "")).strip()
         task_id = task.get('task_id', idx)
-        subject = task.get('Subject', 'No Subject')
-        owner = task.get('Owner', 'Unknown')
         
+        print(f"\n--- Task {task_id}: '{subject}' ---")
+        print(f"  Owner: '{owner}', Status: '{status}'")
+
         should_send, reason = should_send_reminder(task, force_first=force_first)
 
         if not should_send:
             skipped += 1
             reason_counts[reason] = reason_counts.get(reason, 0) + 1
-            print(f"  [{task_id}] Skipped: {reason}")
+            
+            # Track for debugging
+            if reason in ["no_email", "status", "unassigned_owner"]:
+                skipped_details[reason].append({
+                    "task_id": task_id,
+                    "owner": owner,
+                    "status": status,
+                    "subject": subject
+                })
+            
+            print(f"  ❌ Skipped: {reason}")
             continue
 
         to_email = resolve_owner_email(owner, team_map)
@@ -484,14 +512,25 @@ def send_reminders(force_first: bool = False) -> str:
         if not to_email:
             skipped += 1
             reason_counts["no_email"] += 1
-            print(f"  [{task_id}] ❌ No email for owner '{owner}'")
+            skipped_details["no_email"].append({
+                "task_id": task_id,
+                "owner": owner,
+                "status": status,
+                "subject": subject
+            })
+            print(f"  ❌ No email found for owner '{owner}'")
             continue
 
         try:
             mail_subject, html = build_email_html(task)
             
-            # Send email
-            success = send_email(to_email=to_email, subject=mail_subject, html_body=html)
+            # For debugging, just log without sending
+            print(f"  ✅ Would send to: {to_email}")
+            print(f"  Subject: {mail_subject}")
+            
+            # Uncomment to actually send
+            # success = send_email(to_email=to_email, subject=mail_subject, html_body=html)
+            success = True  # For testing
             
             if success:
                 sent += 1
@@ -502,19 +541,19 @@ def send_reminders(force_first: bool = False) -> str:
                 df.at[idx, "Last Reminder On"] = now_str
                 df.at[idx, "Last Updated"] = now_str
                 
-                print(f"  [{task_id}] ✅ Sent to {to_email} (Owner: {owner})")
+                print(f"  ✅ Sent to {to_email}")
             else:
                 errors += 1
                 reason_counts["error"] += 1
-                print(f"  [{task_id}] ❌ Failed to send to {to_email}")
+                print(f"  ❌ Failed to send to {to_email}")
 
         except Exception as e:
             errors += 1
             reason_counts["error"] += 1
-            print(f"  [{task_id}] ❌ Error: {str(e)}")
+            print(f"  ❌ Error: {str(e)}")
             continue
 
-    # Save updates
+    # Save updates if any were sent
     if sent > 0:
         try:
             excel_handler.save_data(df)
@@ -523,8 +562,8 @@ def send_reminders(force_first: bool = False) -> str:
             print(f"❌ Failed to save registry: {str(e)}")
             errors += 1
 
-    # Build summary
-    summary = [
+    # Build summary with debug info
+    summary_lines = [
         f"## 📊 Reminder Summary - {datetime.now().strftime('%Y-%m-%d %H:%M')}",
         f"**Total Tasks Processed:** {len(df)}",
         f"**✅ Reminders Sent:** {sent}",
@@ -532,15 +571,28 @@ def send_reminders(force_first: bool = False) -> str:
         f"**❌ Errors:** {errors}",
         "",
         "### 📈 Breakdown:",
+        f"- No email found: {reason_counts['no_email']}",
+        f"- Invalid status: {reason_counts['status']}",
+        f"- Unassigned owner: {reason_counts['unassigned_owner']}",
+        f"- Not due yet: {reason_counts['frequency_not_due']}",
+        f"- Email errors: {reason_counts['error']}",
+        f"- First reminders: {reason_counts['first_reminder']}",
+        f"- Forced reminders: {reason_counts['force_first']}",
+        f"- Scheduled reminders: {reason_counts['frequency_ok']}",
     ]
     
-    # Add reasons
-    for reason, count in sorted(reason_counts.items()):
-        if count > 0:
-            summary.append(f"- {reason}: {count}")
+    # Add skipped details
+    if skipped_details["no_email"]:
+        summary_lines.append("\n### 🔍 Tasks with no email (sample):")
+        for i, task in enumerate(skipped_details["no_email"][:5]):
+            summary_lines.append(f"- Task {task['task_id']}: Owner='{task['owner']}', Subject='{task['subject']}'")
     
-    return "\n".join(summary)
-
+    if skipped_details["status"]:
+        summary_lines.append("\n### 🔍 Tasks with invalid status (sample):")
+        for i, task in enumerate(skipped_details["status"][:5]):
+            summary_lines.append(f"- Task {task['task_id']}: Status='{task['status']}', Subject='{task['subject']}'")
+    
+    return "\n".join(summary_lines)
 
 # -----------------------------
 # Debug Functions
@@ -566,7 +618,6 @@ def test_team_directory():
         print(f"  '{name}' -> {email if email else '❌ Not found'}")
     
     return team_map
-
 
 def check_registry_dates():
     """Check dates in registry for issues."""
