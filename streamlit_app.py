@@ -688,101 +688,109 @@ def show_send_reminders():
     st.markdown("Send email reminders to task owners for pending tasks.")
     st.markdown("---")
     
-    force_first = st.checkbox(
-        "Force first reminder for all pending tasks",
-        value=False,
-        key="force_first_reminder",
-        help="Send reminders even if tasks were recently reminded"
-    )
+    # Quick actions
+    col1, col2, col3 = st.columns(3)
     
-    # Note: Remove test_mode checkbox since function doesn't support it yet
-    # test_mode = st.checkbox(
-    #     "Test Mode (no emails sent)",
-    #     value=True,
-    #     key="test_mode",
-    #     help="Run without actually sending emails"
-    # )
+    with col1:
+        if st.button("🔍 Test Email Matching", use_container_width=True):
+            try:
+                from run_reminders import test_email_matching
+                import io
+                import sys
+                
+                # Capture output
+                old_stdout = sys.stdout
+                sys.stdout = buffer = io.StringIO()
+                
+                test_email_matching()
+                
+                sys.stdout = old_stdout
+                output = buffer.getvalue()
+                
+                st.code(output)
+            except Exception as e:
+                st.error(f"❌ Error: {e}")
+    
+    with col2:
+        if st.button("🛠️ Fix Missing Mappings", use_container_width=True):
+            try:
+                from run_reminders import fix_missing_mappings
+                result = fix_missing_mappings()
+                st.success(result)
+            except Exception as e:
+                st.error(f"❌ Error: {e}")
+    
+    with col3:
+        debug_mode = st.checkbox("Debug Mode", value=True)
     
     st.markdown("---")
     
-    col1, col2 = st.columns([1, 1])
+    # Main reminder sending
+    force_first = st.checkbox(
+        "Send first reminder for new tasks",
+        value=True,
+        help="Send reminder for tasks that have never been reminded"
+    )
     
-    with col1:
-        if st.button("📤 Send Reminders Now", type="primary", use_container_width=True, key="send_reminders_btn"):
-            with st.spinner("Sending reminders..."):
-                try:
-                    # Try to import from the correct location
-                    try:
-                        from run_reminders import send_reminders
-                    except ImportError:
-                        # If run_reminders is in a different location
-                        import sys
-                        sys.path.append('.')
-                        from run_reminders import send_reminders
-                    
-                    # Call with only force_first parameter (backward compatible)
-                    try:
-                        # Try with force_first parameter
-                        result_msg = send_reminders(force_first=force_first)
-                    except TypeError as e:
-                        if "force_first" in str(e):
-                            # If function doesn't accept force_first, call without it
-                            result_msg = send_reminders()
-                        else:
-                            raise e
-                    
-                    # Display success message
-                    st.success("✅ Reminder process completed!")
-                    
-                    # Parse and display the result
-                    display_result(result_msg)
-                    
-                except Exception as e:
-                    st.error(f"❌ Error sending reminders: {e}")
-                    # Show more detailed error
-                    with st.expander("Show Error Details"):
-                        st.exception(e)
-    
-    with col2:
-        if st.button("🧪 Test Reminder Logic", type="secondary", use_container_width=True, key="test_logic_btn"):
-            with st.spinner("Testing reminder logic..."):
-                try:
-                    # Test without actually sending emails
-                    test_result = test_reminder_logic_safe()
-                    st.info("🧪 Test Results")
-                    display_result(test_result)
-                except Exception as e:
-                    st.error(f"❌ Test failed: {e}")
-
-def display_result(result_msg: str):
-    """Helper function to display results in a formatted way."""
-    if not result_msg:
-        return
-    
-    # Split by lines and format
-    lines = result_msg.split('\n')
-    
-    with st.expander("📋 View Detailed Results", expanded=True):
-        for line in lines:
-            line = line.strip()
-            if not line:
-                continue
+    if st.button("🚀 Send Reminders Now", type="primary", use_container_width=True):
+        with st.spinner("Processing reminders..."):
+            try:
+                from run_reminders import send_reminders
                 
-            if line.startswith("## "):
-                st.subheader(line[3:])
-            elif line.startswith("### "):
-                st.markdown(f"**{line[4:]}**")
-            elif "✅" in line or "Sent" in line:
-                st.success(line)
-            elif "❌" in line or "Error" in line:
-                st.error(line)
-            elif "ℹ️" in line or "No tasks" in line:
-                st.info(line)
-            elif "**" in line:
-                st.markdown(line)
-            else:
-                st.write(line)
+                # Run reminders
+                result = send_reminders(force_first=force_first, debug=debug_mode)
+                
+                # Parse and display results
+                display_reminder_results(result, debug_mode)
+                
+            except Exception as e:
+                st.error(f"❌ Error sending reminders: {e}")
+                show_troubleshooting()
 
+def display_reminder_results(result, debug_mode=False):
+    """Display reminder results."""
+    if debug_mode:
+        st.info("🧪 Debug Mode - No emails were actually sent")
+    
+    # Parse and display results
+    lines = result.split('\n')
+    
+    with st.expander("📋 Detailed Results", expanded=True):
+        for line in lines:
+            if line.startswith('##'):
+                st.subheader(line[3:])
+            elif line.startswith('###'):
+                st.markdown(f"**{line[4:]}**")
+            elif line.startswith('**'):
+                st.markdown(line)
+            elif line.startswith('✅'):
+                st.success(line)
+            elif line.startswith('❌'):
+                st.error(line)
+            elif line.startswith('⚠️'):
+                st.warning(line)
+            elif line.strip():
+                st.write(line)
+    
+    # Show summary
+    sent = 0
+    for line in lines:
+        if "Reminders Sent:" in line:
+            sent = int(line.split(":")[1].strip().split()[0])
+            break
+    
+    if sent > 0:
+        if debug_mode:
+            st.success(f"✅ Debug: Would have sent {sent} reminders!")
+        else:
+            st.success(f"✅ Successfully sent {sent} reminders!")
+    else:
+        st.warning("⚠️ No reminders were sent")
+        
+        # Show specific advice
+        if "no_email" in result.lower():
+            st.info("💡 Tip: Run 'Test Email Matching' to see which owners need email addresses")
+            
 def test_reminder_logic_safe():
     """Safe test function that doesn't depend on test_mode parameter."""
     try:
