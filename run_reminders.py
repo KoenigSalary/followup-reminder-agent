@@ -9,6 +9,9 @@ import numpy as np
 from pathlib import Path
 import re
 
+from dotenv import load_dotenv
+load_dotenv()
+
 # ========== IMPORT FROM CONFIG ==========
 try:
     from config import HARDCODED_EMAILS, REMINDER_FREQUENCY_DAYS
@@ -49,21 +52,42 @@ TEAM_FILE = DATA_DIR / "Team_Directory.xlsx"
 DATA_DIR.mkdir(exist_ok=True)
 
 # -----------------------------
-# ENV CONFIG
+# Settings helper functions (from original code)
+# -----------------------------
+def _get_setting(key: str, default=None):
+    """Read from OS env first, then Streamlit secrets (Cloud)."""
+    val = os.getenv(key)
+    if val is not None and str(val).strip() != "":
+        return val
+
+    try:
+        import streamlit as st
+        return st.secrets.get(key, default)
+    except Exception:
+        return default
+
+def _require_setting(key: str):
+    val = _get_setting(key)
+    if val is None or str(val).strip() == "":
+        raise ValueError(
+            f"Missing required setting: {key}. "
+            f"Set it in Streamlit Secrets (Cloud) or .env (local)."
+        )
+    return val
+
+# -----------------------------
+# ENV CONFIG - Updated to use _get_setting
 # -----------------------------
 def get_env_config():
-    """Get environment variables with fallbacks."""
-    import os
-    from dotenv import load_dotenv
-    load_dotenv()
+    """Get environment variables with fallbacks using _get_setting."""
     
     return {
-        "smtp_server": os.getenv("SMTP_SERVER", "smtp.office365.com"),
-        "smtp_port": int(os.getenv("SMTP_PORT", 587)),
-        "smtp_username": os.getenv("SMTP_USERNAME", ""),
-        "smtp_password": os.getenv("CEO_AGENT_EMAIL_PASSWORD", ""),
-        "sender_name": os.getenv("AGENT_SENDER_NAME", "Follow-up Reminder Agent"),
-        "sender_email": os.getenv("AGENT_SENDER_EMAIL", os.getenv("SMTP_USERNAME", "")),
+        "smtp_server": _get_setting("SMTP_SERVER", "smtp.office365.com"),
+        "smtp_port": int(_get_setting("SMTP_PORT", 587)),
+        "smtp_username": _require_setting("SMTP_USERNAME"),
+        "smtp_password": _require_setting("CEO_AGENT_EMAIL_PASSWORD"),
+        "sender_name": _get_setting("AGENT_SENDER_NAME", "Follow-up Reminder Agent"),
+        "sender_email": _get_setting("AGENT_SENDER_EMAIL", _get_setting("SMTP_USERNAME", "")),
     }
 
 # -----------------------------
