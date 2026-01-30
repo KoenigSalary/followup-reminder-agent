@@ -1,4 +1,4 @@
-# run_reminders.py - UPDATED TO USE CONFIG
+# run_reminders.py - UPDATED WITH MULTI-OWNER SUPPORT
 import os
 import smtplib
 from email.mime.multipart import MIMEMultipart
@@ -7,7 +7,7 @@ from datetime import datetime, date
 import pandas as pd
 import numpy as np
 from pathlib import Path
-from config import HARDCODED_EMAILS, REMINDER_FREQUENCY_DAYS
+import re
 
 # ========== IMPORT FROM CONFIG ==========
 try:
@@ -23,7 +23,6 @@ except ImportError as e:
         "MEDIUM": 3,
         "LOW": 7,
     }
-# =========================================
 
 # Import based on your structure
 try:
@@ -117,88 +116,84 @@ def load_team_directory():
         return {}
 
 # -----------------------------
-# EMAIL RESOLUTION - USING CONFIG
+# EMAIL RESOLUTION - WITH MULTI-OWNER SUPPORT
 # -----------------------------
-def resolve_owner_email(owner: str, team_map: dict) -> str | None:
+def split_owners(owner_string):
     """
-    Resolve owner name to email.
-    Uses team_map first, then HARDCODED_EMAILS from config.
+    Split owner string into individual owners.
+    Handles: "Ajay,Vipin", "Ajay;Vipin", "Ajay & Vipin", "Ajay and Vipin"
     """
-    if not owner or pd.isna(owner):
+    if not owner_string or pd.isna(owner_string):
+        return []
+    
+    owner_str = str(owner_string).strip()
+    if not owner_str or owner_str.upper() == "UNASSIGNED":
+        return []
+    
+    # Split by common delimiters
+    # Handles: comma, semicolon, ampersand, "and", slash
+    split_pattern = r'[,;&/\|]|\band\b'
+    owners = re.split(split_pattern, owner_str)
+    
+    # Clean up each owner name
+    cleaned_owners = []
+    for owner in owners:
+        owner_clean = owner.strip()
+        if owner_clean and owner_clean.upper() != "UNASSIGNED":
+            cleaned_owners.append(owner_clean)
+    
+    return cleaned_owners
+
+def resolve_single_owner_email(owner_name: str, team_map: dict) -> str | None:
+    """
+    Resolve a single owner name to email.
+    """
+    if not owner_name:
         return None
     
-    owner_str = str(owner).strip()
-    if not owner_str or owner_str.upper() == "UNASSIGNED":
-        return None
+    owner_clean = owner_name.strip().lower()
     
     # Try team map first
     # 1. Exact match (lowercase)
-    if owner_str.lower() in team_map:
-        return team_map[owner_str.lower()]
+    if owner_clean in team_map:
+        return team_map[owner_clean]
     
-    # 2. Try first name
-    first_name = owner_str.split()[0].lower() if ' ' in owner_str else owner_str.lower()
+    # 2. Try first name (if owner has multiple parts)
+    first_name = owner_clean.split()[0] if ' ' in owner_clean else owner_clean
     if first_name in team_map:
         return team_map[first_name]
     
-    # 3. Try HARDCODED_EMAILS from config
-    if owner_str.lower() in HARDCODED_EMAILS:
-        return HARDCODED_EMAILS[owner_str.lower()]
+    # 3. Try capitalized first name
+    first_name_cap = first_name.capitalize()
+    if first_name_cap in team_map:
+        return team_map[first_name_cap]
+    
+    # 4. Try HARDCODED_EMAILS from config
+    if owner_clean in HARDCODED_EMAILS:
+        return HARDCODED_EMAILS[owner_clean]
     
     if first_name in HARDCODED_EMAILS:
         return HARDCODED_EMAILS[first_name]
     
-    print(f"⚠️ No email found for owner: '{owner_str}'")
     return None
 
-def resolve_single_owner(owner_str: str, team_map: dict) -> str | None:
-    """Resolve a single owner name to email."""
+def resolve_owner_emails(owner_string: str, team_map: dict) -> list:
+    """
+    Resolve multiple owners to their emails.
+    Returns list of (owner_name, email) tuples.
+    """
+    owners = split_owners(owner_string)
     
-    # Clean the owner string
-    owner_clean = owner_str.strip()
+    results = []
+    seen_emails = set()  # Avoid duplicate emails
     
-    # Try different variations
-    variations = [
-        # Exact match (case insensitive)
-        owner_clean.lower(),
-        
-        # First letter capitalized (common in tasks)
-        owner_clean.capitalize(),
-        
-        # Lowercase
-        owner_clean.lower(),
-        
-        # Remove any trailing dots or special chars
-        owner_clean.rstrip('. ').lower(),
-        
-        # Just first name if there are multiple words
-        owner_clean.split()[0].lower() if ' ' in owner_clean else owner_clean.lower(),
-        
-        # Try with common Indian name variations
-        # e.g., "Anurag" might be "Anurag Chauhan" in team directory
-        # We'll handle this by checking if any key contains this name
-    ]
+    for owner in owners:
+        email = resolve_single_owner_email(owner, team_map)
+        if email and email not in seen_emails:
+            results.append((owner, email))
+            seen_emails.add(email)
     
-    # Try direct matches first
-    for variation in variations:
-        if variation in team_map:
-            print(f"  ✅ Direct match: '{variation}' -> {team_map[variation]}")
-            return team_map[variation]
-    
-    # Strategy 3: Partial matching
-    # Check if any key in team_map contains this owner name
-    owner_lower = owner_clean.lower()
-    for key in team_map.keys():
-        if owner_lower in key.lower() or key.lower() in owner_lower:
-            print(f"  ✅ Partial match: '{owner_clean}' found in '{key}' -> {team_map[key]}")
-            return team_map[key]
-    
-    # Strategy 4: Check for common abbreviations
-    # e.g., "Dimna" might be short for something
-    # This is a fallback - you might want to add specific mappings
-    
-    print(f"  ❌ No match found for: '{owner_clean}'")
-    return None
+    return results
 
 # -----------------------------
 # DATE HANDLING
@@ -241,13 +236,13 @@ def should_send_reminder(task, force_first=False):
     
     if not is_active:
         # Check if it's a completed status
-        completed_statuses = ['DONE', 'COMPLETED', 'CLOSED', 'FINISHED', 'RESOLVED']
+        completed_statuses = ['DONE', 'COMPLETED', 'CLOSED', 'FINISHED', 'RESOLVED', 'DELETED']
         for completed in completed_statuses:
             if completed in status:
                 return False, f"status_completed ({status})"
         return False, f"status_inactive ({status})"
     
-    # Check owner
+    # Check owner - now accepts multiple owners
     owner = str(task.get('Owner', '')).strip()
     if not owner or owner.upper() == 'UNASSIGNED':
         return False, "unassigned_owner"
@@ -281,7 +276,7 @@ def should_send_reminder(task, force_first=False):
     return False, f"frequency_not_due ({days_since}d < {freq}d)"
 
 # -----------------------------
-# EMAIL SENDING
+# EMAIL SENDING - UPDATED FOR MULTI-OWNER
 # -----------------------------
 def send_email(to_email, subject, html_body):
     """Send email with error handling."""
@@ -313,14 +308,28 @@ def send_email(to_email, subject, html_body):
         print(f"❌ Failed to send email to {to_email}: {e}")
         return False
 
-def build_email_html(task):
-    """Build email HTML."""
-    owner = task.get('Owner', 'Owner')
+def build_email_html(task, specific_owner=None):
+    """
+    Build email HTML.
+    If specific_owner is provided, use that name instead of task owner.
+    """
+    # Use specific owner if provided, otherwise use task owner
+    if specific_owner:
+        owner_display = specific_owner
+    else:
+        owner_display = task.get('Owner', 'Owner')
+    
     subject = task.get('Subject', 'Task Update Required')
     due_date = task.get('Due Date', 'Not specified')
     priority = task.get('Priority', 'MEDIUM')
     status = task.get('Status', 'OPEN')
     remarks = task.get('Remarks', '')
+    
+    # If there are multiple owners, mention it in the email
+    original_owner = task.get('Owner', '')
+    multi_owner_note = ""
+    if ',' in str(original_owner) or ';' in str(original_owner):
+        multi_owner_note = f"<p><em>Note: This task is also assigned to: {original_owner}</em></p>"
     
     html = f"""
     <!DOCTYPE html>
@@ -331,7 +340,7 @@ def build_email_html(task):
                 <h2>📧 Task Reminder</h2>
             </div>
             <div style="padding: 20px; background-color: #f9f9f9; border-radius: 5px; margin-top: 10px;">
-                <p>Hi <strong>{owner}</strong>,</p>
+                <p>Hi <strong>{owner_display}</strong>,</p>
                 <p>This is a reminder for your pending task:</p>
                 
                 <table style="width: 100%; border-collapse: collapse; margin: 15px 0;">
@@ -341,6 +350,8 @@ def build_email_html(task):
                     <tr><th style="text-align: left; padding: 8px; border-bottom: 1px solid #ddd;">Status</th><td style="padding: 8px; border-bottom: 1px solid #ddd;">{status}</td></tr>
                     <tr><th style="text-align: left; padding: 8px; border-bottom: 1px solid #ddd;">Remarks</th><td style="padding: 8px; border-bottom: 1px solid #ddd;">{remarks or 'No remarks'}</td></tr>
                 </table>
+                
+                {multi_owner_note}
                 
                 <p>Please update the task status or take necessary action.</p>
                 <p>Best regards,<br>
@@ -358,10 +369,10 @@ def build_email_html(task):
     return f"Task Reminder: {subject}", html
 
 # -----------------------------
-# MAIN FUNCTION - WITH BETTER DEBUGGING
+# MAIN FUNCTION - WITH MULTI-OWNER SUPPORT
 # -----------------------------
 def send_reminders(force_first=False, debug=False):
-    """Main function to send reminders."""
+    """Main function to send reminders with multi-owner support."""
     print(f"\n{'='*60}")
     print(f"🚀 Starting reminder process - {datetime.now().strftime('%Y-%m-%d %H:%M')}")
     print(f"{'='*60}")
@@ -386,14 +397,7 @@ def send_reminders(force_first=False, debug=False):
         team_map = load_team_directory()
         print(f"📧 Loaded {len(team_map)} email mappings")
         
-        # Show sample mappings for debugging
-        if debug:
-            print("\n🔍 Sample team mappings:")
-            for key in ['anurag', 'praveen', 'ajay', 'aditya', 'dimna']:
-                if key in team_map:
-                    print(f"  {key}: {team_map[key]}")
-        
-        sent = 0
+        sent_total = 0
         skipped = 0
         reasons = {}
         
@@ -415,70 +419,77 @@ def send_reminders(force_first=False, debug=False):
                 print(f"  ❌ Skipped: {reason}")
                 continue
             
-            # Get owner email
-            owner = str(task.get('Owner', '')).strip()
-            email = resolve_owner_email(owner, team_map)
+            # Get ALL owners and their emails
+            owner_string = str(task.get('Owner', '')).strip()
+            owner_emails = resolve_owner_emails(owner_string, team_map)
             
-            if not email:
+            if not owner_emails:
                 skipped += 1
                 reasons['no_email'] = reasons.get('no_email', 0) + 1
-                print(f"  ❌ No email for owner '{owner}'")
+                print(f"  ❌ No email found for owner(s): '{owner_string}'")
                 
-                # Debug: Show what's in team_map for this owner
+                # Show debug info
                 if debug:
-                    owner_lower = owner.lower()
-                    print(f"  🔍 Debug - searching for '{owner_lower}' in team_map:")
-                    found = False
-                    for key in team_map.keys():
-                        if owner_lower in key or key in owner_lower:
-                            print(f"    Found similar: '{key}' -> {team_map[key]}")
-                            found = True
-                    if not found:
-                        print(f"    No similar keys found in team_map")
+                    owners = split_owners(owner_string)
+                    print(f"  🔍 Split owners: {owners}")
+                    for owner in owners:
+                        email = resolve_single_owner_email(owner, team_map)
+                        print(f"    '{owner}' -> {email if email else '❌ Not found'}")
                 
                 continue
             
-            try:
-                # Build and send email
-                subject_line, html = build_email_html(task)
-                
-                if debug:
-                    print(f"  ✅ Would send to {email}")
-                    print(f"  Subject: {subject_line}")
-                    success = True  # Pretend success in debug mode
-                else:
-                    success = send_email(email, subject_line, html)
-                
-                if success:
-                    sent += 1
-                    reasons[reason] = reasons.get(reason, 0) + 1
+            print(f"  👥 Found {len(owner_emails)} owner(s): {[o for o, _ in owner_emails]}")
+            
+            # Send email to each owner
+            emails_sent_for_task = 0
+            task_updated = False
+            
+            for owner_name, email in owner_emails:
+                try:
+                    # Build email with specific owner name
+                    subject_line, html = build_email_html(task, specific_owner=owner_name)
                     
-                    # Update registry
-                    df.at[idx, 'Last Reminder Date'] = now_str
-                    df.at[idx, 'Last Reminder On'] = now_str
-                    df.at[idx, 'Last Updated'] = now_str
+                    if debug:
+                        print(f"    ✅ Would send to {owner_name} <{email}>")
+                        print(f"    Subject: {subject_line}")
+                        success = True  # Pretend success in debug mode
+                    else:
+                        success = send_email(email, subject_line, html)
                     
-                    print(f"  ✅ Sent to {email}")
-                else:
-                    skipped += 1
-                    reasons['send_error'] = reasons.get('send_error', 0) + 1
-                    print(f"  ❌ Failed to send to {email}")
-                    
-            except Exception as e:
-                skipped += 1
-                reasons['error'] = reasons.get('error', 0) + 1
-                print(f"  ❌ Error: {e}")
+                    if success:
+                        emails_sent_for_task += 1
+                        sent_total += 1
+                        print(f"    ✅ Sent to {owner_name} <{email}>")
+                    else:
+                        reasons['send_error'] = reasons.get('send_error', 0) + 1
+                        print(f"    ❌ Failed to send to {owner_name} <{email}>")
+                        
+                except Exception as e:
+                    reasons['error'] = reasons.get('error', 0) + 1
+                    print(f"    ❌ Error sending to {owner_name}: {e}")
+            
+            # Update task reminder date if at least one email was sent
+            if emails_sent_for_task > 0 and not debug:
+                df.at[idx, 'Last Reminder Date'] = now_str
+                df.at[idx, 'Last Reminder On'] = now_str
+                df.at[idx, 'Last Updated'] = now_str
+                task_updated = True
+                print(f"  ✅ Updated task reminder date")
+            
+            # Track reasons
+            if emails_sent_for_task > 0:
+                reasons[reason] = reasons.get(reason, 0) + 1
         
-        # Save updates
-        if sent > 0 and not debug:
+        # Save updates if any emails were sent
+        if sent_total > 0 and not debug:
             df.to_excel(REGISTRY_FILE, index=False)
-            print(f"\n💾 Updated {sent} tasks in registry")
+            print(f"\n💾 Updated {len(df[df['Last Reminder Date'] == now_str])} tasks in registry")
         
         # Build summary
         summary = [
             f"## 📊 Reminder Summary - {datetime.now().strftime('%Y-%m-%d %H:%M')}",
             f"**Total Tasks Processed:** {len(df)}",
-            f"**✅ Reminders Sent:** {sent}",
+            f"**✅ Total Emails Sent:** {sent_total}",
             f"**⏭️ Tasks Skipped:** {skipped}",
             "",
             "### 📈 Breakdown:",
@@ -491,27 +502,9 @@ def send_reminders(force_first=False, debug=False):
         if 'no_email' in reasons and reasons['no_email'] > 0:
             summary.append(f"\n⚠️ **{reasons['no_email']} tasks had no email mapping**")
             summary.append("**Solution:** Check if owner names match between tasks and team directory")
-            
-            # List unique owners that failed
-            failed_owners = set()
-            for idx, row in df.iterrows():
-                if pd.isna(row.get('Owner')):
-                    continue
-                owner = str(row['Owner']).strip()
-                if owner and owner.upper() != 'UNASSIGNED':
-                    email = resolve_owner_email(owner, team_map)
-                    if not email:
-                        failed_owners.add(owner)
-            
-            if failed_owners:
-                summary.append("**Owners needing mapping:**")
-                for owner in sorted(failed_owners)[:10]:  # Show first 10
-                    summary.append(f"  - {owner}")
-                if len(failed_owners) > 10:
-                    summary.append(f"  ... and {len(failed_owners) - 10} more")
         
         print(f"\n{'='*60}")
-        print(f"✅ Process complete - Sent: {sent}, Skipped: {skipped}")
+        print(f"✅ Process complete - Emails Sent: {sent_total}, Tasks Skipped: {skipped}")
         print(f"{'='*60}")
         
         return "\n".join(summary)
@@ -522,147 +515,40 @@ def send_reminders(force_first=False, debug=False):
         return error_msg
 
 # -----------------------------
-# QUICK TEST FUNCTION
+# TEST FUNCTIONS
 # -----------------------------
-def test_email_matching():
-    """Test email matching with your actual data."""
-    print("🧪 Testing email matching with your data...")
+def test_multi_owner():
+    """Test multi-owner functionality."""
+    print("🧪 Testing multi-owner handling...")
+    
+    # Test cases
+    test_cases = [
+        "Ajay,Vipin",
+        "Ajay;Vipin",
+        "Ajay & Vipin",
+        "Ajay and Vipin",
+        "Ajay, Vipin, Anurag",
+        "Ajay",
+        "",
+        "UNASSIGNED",
+        "Ajay,Vipin,Anurag,Praveen",
+    ]
     
     # Load team directory
     team_map = load_team_directory()
     
-    # Test with common owner names from your tasks
-    test_owners = [
-        "Anurag",
-        "Dimna",
-        "Ajay,Vipin",
-        "Aditya",
-        "Praveen",
-        "Rajesh",
-        "Amit",
-        "Sunil",
-        "Sarika",
-        "Ritika"
-    ]
-    
-    print("\n🔍 Email Resolution Test:")
-    for owner in test_owners:
-        email = resolve_owner_email(owner, team_map)
-        status = "✅ Found" if email else "❌ Not found"
-        print(f"  {owner:15} -> {email if email else 'No email'} {status}")
-    
-    # Test with actual task owners
-    if REGISTRY_FILE.exists():
-        df = pd.read_excel(REGISTRY_FILE)
-        unique_owners = df['Owner'].dropna().unique()
+    for test_str in test_cases:
+        print(f"\n📝 Testing: '{test_str}'")
+        owners = split_owners(test_str)
+        print(f"  Split into: {owners}")
         
-        print(f"\n📋 Actual task owners ({len(unique_owners)} unique):")
-        found = 0
-        not_found = []
-        
-        for owner in sorted(unique_owners)[:20]:  # Show first 20
-            owner_str = str(owner).strip()
-            if not owner_str or owner_str.upper() == 'UNASSIGNED':
-                continue
-                
-            email = resolve_owner_email(owner_str, team_map)
-            if email:
-                found += 1
-                print(f"  ✅ {owner_str:20} -> {email}")
-            else:
-                not_found.append(owner_str)
-                print(f"  ❌ {owner_str:20} -> No email")
-        
-        print(f"\n📊 Summary: {found} found, {len(not_found)} not found")
-        
-        if not_found:
-            print("\n❌ Owners not found in team directory:")
-            for owner in not_found[:10]:
-                print(f"  - {owner}")
-
-# -----------------------------
-# FIX MISSING MAPPINGS
-# -----------------------------
-def fix_missing_mappings():
-    """Create a mapping file for missing owners."""
-    
-    if not REGISTRY_FILE.exists():
-        return "❌ Registry file not found"
-    
-    if not TEAM_FILE.exists():
-        return "❌ Team directory not found"
-    
-    try:
-        # Load data
-        tasks_df = pd.read_excel(REGISTRY_FILE)
-        team_df = pd.read_excel(TEAM_FILE)
-        
-        # Get unique active task owners
-        active_statuses = ['OPEN', 'PENDING', 'IN PROGRESS']
-        active_tasks = tasks_df[tasks_df['Status'].isin(active_statuses)]
-        unique_owners = active_tasks['Owner'].dropna().unique()
-        
-        # Create mapping dictionary from team directory
-        team_map = {}
-        for _, row in team_df.iterrows():
-            full_name = str(row.get('full_name', '')).strip()
-            email = str(row.get('email', '')).strip().lower()
-            
-            if full_name and email:
-                # Map by first name
-                first_name = full_name.split()[0].lower()
-                team_map[first_name] = email
-                
-                # Map by full name
-                team_map[full_name.lower()] = email
-        
-        # Find missing mappings
-        missing = []
-        for owner in unique_owners:
-            if not isinstance(owner, str):
-                continue
-                
-            owner_clean = owner.strip().lower()
-            if not owner_clean or owner_clean == 'unassigned':
-                continue
-            
-            # Check if owner exists in team_map
-            found = False
-            for key in team_map.keys():
-                if owner_clean in key or key in owner_clean:
-                    found = True
-                    break
-            
-            if not found:
-                missing.append(owner)
-        
-        # Create fix file
-        if missing:
-            fix_data = []
-            for owner in missing:
-                # Try to guess email
-                first_part = owner.split()[0].lower() if ' ' in owner else owner.lower()
-                suggested_email = f"{first_part}@koenig-solutions.com"
-                
-                fix_data.append({
-                    'task_owner': owner,
-                    'suggested_full_name': owner.title(),
-                    'suggested_email': suggested_email,
-                    'actual_full_name': '',
-                    'actual_email': '',
-                    'notes': 'Add to Team_Directory.xlsx'
-                })
-            
-            fix_df = pd.DataFrame(fix_data)
-            fix_path = DATA_DIR / 'missing_mappings.xlsx'
-            fix_df.to_excel(fix_path, index=False)
-            
-            return f"✅ Created fix file with {len(missing)} missing mappings: {fix_path}"
+        emails = resolve_owner_emails(test_str, team_map)
+        if emails:
+            print(f"  ✅ Found emails:")
+            for owner, email in emails:
+                print(f"    {owner} -> {email}")
         else:
-            return "✅ All owners have email mappings!"
-        
-    except Exception as e:
-        return f"❌ Error: {e}"
+            print(f"  ❌ No emails found")
 
 # -----------------------------
 # RUN IF EXECUTED DIRECTLY
@@ -672,10 +558,7 @@ if __name__ == "__main__":
     
     if len(sys.argv) > 1:
         if sys.argv[1] == "test":
-            test_email_matching()
-        elif sys.argv[1] == "fix":
-            result = fix_missing_mappings()
-            print(result)
+            test_multi_owner()
         elif sys.argv[1] == "send":
             result = send_reminders()
             print(result)
@@ -683,25 +566,21 @@ if __name__ == "__main__":
             result = send_reminders(debug=True)
             print(result)
         else:
-            print("Usage: python run_reminders.py [test|fix|send|debug]")
+            print("Usage: python run_reminders.py [test|send|debug]")
     else:
         # Interactive mode
         print("Reminder System")
-        print("1. Test email matching")
-        print("2. Fix missing mappings")
-        print("3. Send reminders (debug mode)")
-        print("4. Send reminders (actual)")
-        choice = input("Select option (1-4): ")
+        print("1. Test multi-owner handling")
+        print("2. Send reminders (debug mode)")
+        print("3. Send reminders (actual)")
+        choice = input("Select option (1-3): ")
         
         if choice == "1":
-            test_email_matching()
+            test_multi_owner()
         elif choice == "2":
-            result = fix_missing_mappings()
-            print(result)
-        elif choice == "3":
             result = send_reminders(debug=True)
             print(result)
-        elif choice == "4":
+        elif choice == "3":
             result = send_reminders()
             print(result)
         else:
