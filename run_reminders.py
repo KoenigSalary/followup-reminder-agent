@@ -658,3 +658,10 @@ if __name__ == "__main__":
         if choice == "1":
             test_multi_owner()
         elif choice == "2":
+            result = send_reminders(debug=True)
+            print(result)
+        elif choice == "3":
+            result = send_reminders()
+            print(result)
+        else:
+            print("Invalid choice")
