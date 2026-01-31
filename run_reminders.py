@@ -491,7 +491,7 @@ def send_reminders(force_first=False, debug=False):
                         print(f"  Subject: {mail_subject}")
                         success = True  # Pretend success in debug mode
                         error_msg = None
-                else:
+                    else:
                     success, error_msg = send_email(email, mail_subject, html)
                     else:
                         success = send_email(email, subject_line, html)
