@@ -597,6 +597,31 @@ def send_reminders(force_first=False, debug=False):
 # -----------------------------
 # TEST FUNCTIONS
 # -----------------------------
+def test_smtp_connection():
+    """Test SMTP connectivity + login. Returns a human readable string."""
+    cfg = get_env_config()
+
+    if not cfg.get("smtp_server") or not cfg.get("smtp_port"):
+        return "❌ SMTP server/port not configured"
+
+    if not cfg.get("smtp_username"):
+        return "❌ SMTP_USERNAME not configured"
+
+    if not cfg.get("smtp_password"):
+        return "❌ CEO_AGENT_EMAIL_PASSWORD not configured"
+
+    try:
+        with smtplib.SMTP(cfg["smtp_server"], cfg["smtp_port"], timeout=10) as server:
+            server.ehlo()
+            server.starttls()
+            server.ehlo()
+            server.login(cfg["smtp_username"], cfg["smtp_password"])
+        return f"✅ SMTP OK: connected and authenticated as {cfg['smtp_username']}"
+    except smtplib.SMTPAuthenticationError as e:
+        return f"❌ SMTP auth failed: {e}"
+    except Exception as e:
+        return f"❌ SMTP connection failed: {e}"
+
 def test_multi_owner():
     """Test multi-owner functionality."""
     print("🧪 Testing multi-owner handling...")
