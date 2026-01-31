@@ -76,20 +76,72 @@ def _require_setting(key: str):
     return val
 
 # -----------------------------
-# ENV CONFIG - Updated to use _get_setting
+# ENV CONFIG - FIXED VERSION
 # -----------------------------
 def get_env_config():
-    """Get environment variables with fallbacks using _get_setting."""
+    """Get environment variables with fallbacks - Streamlit Cloud compatible."""
+    import os
     
-    return {
-        "smtp_server": _get_setting("SMTP_SERVER", "smtp.office365.com"),
-        "smtp_port": int(_get_setting("SMTP_PORT", 587)),
-        "smtp_username": _require_setting("SMTP_USERNAME"),
-        "smtp_password": _require_setting("CEO_AGENT_EMAIL_PASSWORD"),
-        "sender_name": _get_setting("AGENT_SENDER_NAME", "Follow-up Reminder Agent"),
-        "sender_email": _get_setting("AGENT_SENDER_EMAIL", _get_setting("SMTP_USERNAME", "")),
+    # Initialize with defaults
+    config = {
+        "smtp_server": "smtp.office365.com",
+        "smtp_port": 587,
+        "smtp_username": "",
+        "smtp_password": "",
+        "sender_name": "Follow-up Reminder Agent",
+        "sender_email": "",
     }
-
+    
+    # Method 1: Try Streamlit secrets first (for Cloud)
+    try:
+        import streamlit as st
+        if hasattr(st, 'secrets'):
+            # Check each key in secrets
+            if "SMTP_SERVER" in st.secrets:
+                config["smtp_server"] = st.secrets["SMTP_SERVER"]
+            if "SMTP_PORT" in st.secrets:
+                config["smtp_port"] = int(st.secrets["SMTP_PORT"])
+            if "SMTP_USERNAME" in st.secrets:
+                config["smtp_username"] = st.secrets["SMTP_USERNAME"]
+            if "CEO_AGENT_EMAIL_PASSWORD" in st.secrets:
+                config["smtp_password"] = st.secrets["CEO_AGENT_EMAIL_PASSWORD"]
+            if "AGENT_SENDER_NAME" in st.secrets:
+                config["sender_name"] = st.secrets["AGENT_SENDER_NAME"]
+            if "AGENT_SENDER_EMAIL" in st.secrets:
+                config["sender_email"] = st.secrets["AGENT_SENDER_EMAIL"]
+            
+            # If we got username and password from secrets, use them
+            if config["smtp_username"] and config["smtp_password"]:
+                print("✅ Using Streamlit secrets for SMTP configuration")
+                # Set sender email if not already set
+                if not config["sender_email"]:
+                    config["sender_email"] = config["smtp_username"]
+                return config
+    except Exception:
+        pass  # Continue to .env file
+    
+    # Method 2: Try .env file (for local development)
+    try:
+        from dotenv import load_dotenv
+        load_dotenv()
+        
+        config["smtp_server"] = os.getenv("SMTP_SERVER", config["smtp_server"])
+        config["smtp_port"] = int(os.getenv("SMTP_PORT", config["smtp_port"]))
+        config["smtp_username"] = os.getenv("SMTP_USERNAME", config["smtp_username"])
+        config["smtp_password"] = os.getenv("CEO_AGENT_EMAIL_PASSWORD", config["smtp_password"])
+        config["sender_name"] = os.getenv("AGENT_SENDER_NAME", config["sender_name"])
+        config["sender_email"] = os.getenv("AGENT_SENDER_EMAIL", config["sender_email"])
+        
+        # Set sender email if not already set
+        if not config["sender_email"] and config["smtp_username"]:
+            config["sender_email"] = config["smtp_username"]
+            
+        print("⚠️ Using .env file for SMTP configuration")
+        return config
+        
+    except Exception as e:
+        print(f"⚠️ Error loading .env: {e}")
+        return config
 # -----------------------------
 # TEAM DIRECTORY
 # -----------------------------
