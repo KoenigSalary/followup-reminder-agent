@@ -1,4 +1,4 @@
-# run_reminders.py - UPDATED WITH MULTI-OWNER SUPPORT
+# run_reminders.py - COMPLETE CORRECTED VERSION
 import os
 import smtplib
 from email.mime.multipart import MIMEMultipart
@@ -8,9 +8,6 @@ import pandas as pd
 import numpy as np
 from pathlib import Path
 import re
-
-from dotenv import load_dotenv
-load_dotenv()
 
 # ========== IMPORT FROM CONFIG ==========
 try:
@@ -52,31 +49,7 @@ TEAM_FILE = DATA_DIR / "Team_Directory.xlsx"
 DATA_DIR.mkdir(exist_ok=True)
 
 # -----------------------------
-# Settings helper functions (from original code)
-# -----------------------------
-def _get_setting(key: str, default=None):
-    """Read from OS env first, then Streamlit secrets (Cloud)."""
-    val = os.getenv(key)
-    if val is not None and str(val).strip() != "":
-        return val
-
-    try:
-        import streamlit as st
-        return st.secrets.get(key, default)
-    except Exception:
-        return default
-
-def _require_setting(key: str):
-    val = _get_setting(key)
-    if val is None or str(val).strip() == "":
-        raise ValueError(
-            f"Missing required setting: {key}. "
-            f"Set it in Streamlit Secrets (Cloud) or .env (local)."
-        )
-    return val
-
-# -----------------------------
-# ENV CONFIG - FIXED VERSION
+# ENV CONFIG - STREAMLIT CLOUD COMPATIBLE
 # -----------------------------
 def get_env_config():
     """Get environment variables with fallbacks - Streamlit Cloud compatible."""
@@ -142,6 +115,7 @@ def get_env_config():
     except Exception as e:
         print(f"⚠️ Error loading .env: {e}")
         return config
+
 # -----------------------------
 # TEAM DIRECTORY
 # -----------------------------
@@ -190,7 +164,7 @@ def load_team_directory():
     except Exception as e:
         print(f"❌ Error loading team directory: {e}")
         return {}
-        
+
 # -----------------------------
 # EMAIL RESOLUTION - WITH MULTI-OWNER SUPPORT
 # -----------------------------
@@ -207,7 +181,6 @@ def split_owners(owner_string):
         return []
     
     # Split by common delimiters
-    # Handles: comma, semicolon, ampersand, "and", slash
     split_pattern = r'[,;&/\|]|\band\b'
     owners = re.split(split_pattern, owner_str)
     
@@ -352,51 +325,54 @@ def should_send_reminder(task, force_first=False):
     return False, f"frequency_not_due ({days_since}d < {freq}d)"
 
 # -----------------------------
-# EMAIL SENDING - UPDATED FOR MULTI-OWNER
+# EMAIL SENDING
 # -----------------------------
-def send_email(to_email, subject, html_body, debug=False):
-    """Send email with error handling. If debug is True, just log and return True."""
-    if debug:
-        print(f"  [DEBUG] Would send email to {to_email}")
-        print(f"  [DEBUG] Subject: {subject}")
-        return True, None
+def send_email(to_email, subject, html_body):
+    """Send email with error handling."""
+    cfg = get_env_config()
     
-    try:
-        cfg = _smtp_config()
-    except Exception as e:
-        error_msg = f"❌ Failed to get SMTP config: {e}"
-        print(error_msg)
-        return False, error_msg
+    # Validate config
+    if not cfg['smtp_username']:
+        print("❌ SMTP username not configured")
+        return False
+    
+    if not cfg['smtp_password']:
+        print("❌ SMTP password not configured")
+        print("💡 Add CEO_AGENT_EMAIL_PASSWORD to Streamlit Secrets")
+        return False
     
     try:
         msg = MIMEMultipart('alternative')
-        msg['From'] = f'{cfg["sender_name"]} <{cfg["sender_email"]}>'
+        msg['From'] = f"{cfg['sender_name']} <{cfg['sender_email']}>"
         msg['To'] = to_email
         msg['Subject'] = subject
-
         msg.attach(MIMEText(html_body, 'html'))
-
-        with smtplib.SMTP(cfg["smtp_server"], cfg["smtp_port"]) as server:
+        
+        print(f"📧 Attempting to send to {to_email} via {cfg['smtp_server']}:{cfg['smtp_port']}")
+        
+        with smtplib.SMTP(cfg['smtp_server'], cfg['smtp_port']) as server:
             server.ehlo()
             server.starttls()
-            server.login(cfg["smtp_username"], cfg["smtp_password"])
-            server.sendmail(cfg["sender_email"], [to_email], msg.as_string())
+            server.ehlo()
+            server.login(cfg['smtp_username'], cfg['smtp_password'])
+            server.send_message(msg)
         
-        print(f"✅ Email sent successfully to {to_email}")
-        return True, None
+        print(f"✅ Email sent to {to_email}")
+        return True
+        
     except smtplib.SMTPAuthenticationError as e:
-        error_msg = f"❌ SMTP Authentication failed: {e}"
-        print(error_msg)
-        return False, error_msg
-    except smtplib.SMTPException as e:
-        error_msg = f"❌ SMTP error occurred: {e}"
-        print(error_msg)
-        return False, error_msg
-    except Exception as e:
-        error_msg = f"❌ Failed to send email to {to_email}: {e}"
-        print(error_msg)
-        return False, error_msg
+        print(f"❌ SMTP Authentication failed for {to_email}: {e}")
+        print("💡 Check if you're using App Password (not regular password) for Office365")
+        return False
         
+    except smtplib.SMTPException as e:
+        print(f"❌ SMTP Error for {to_email}: {e}")
+        return False
+        
+    except Exception as e:
+        print(f"❌ Failed to send email to {to_email}: {e}")
+        return False
+
 def build_email_html(task, specific_owner=None):
     """
     Build email HTML.
@@ -458,10 +434,10 @@ def build_email_html(task, specific_owner=None):
     return f"Task Reminder: {subject}", html
 
 # -----------------------------
-# MAIN FUNCTION - WITH MULTI-OWNER SUPPORT
+# MAIN FUNCTION - CORRECTED VERSION
 # -----------------------------
 def send_reminders(force_first=False, debug=False):
-    """Main function to send reminders with multi-owner support."""
+    """Main function to send reminders."""
     print(f"\n{'='*60}")
     print(f"🚀 Starting reminder process - {datetime.now().strftime('%Y-%m-%d %H:%M')}")
     print(f"{'='*60}")
@@ -516,15 +492,6 @@ def send_reminders(force_first=False, debug=False):
                 skipped += 1
                 reasons['no_email'] = reasons.get('no_email', 0) + 1
                 print(f"  ❌ No email found for owner(s): '{owner_string}'")
-                
-                # Show debug info
-                if debug:
-                    owners = split_owners(owner_string)
-                    print(f"  🔍 Split owners: {owners}")
-                    for owner in owners:
-                        email = resolve_single_owner_email(owner, team_map)
-                        print(f"    '{owner}' -> {email if email else '❌ Not found'}")
-                
                 continue
             
             print(f"  👥 Found {len(owner_emails)} owner(s): {[o for o, _ in owner_emails]}")
@@ -539,13 +506,17 @@ def send_reminders(force_first=False, debug=False):
                     subject_line, html = build_email_html(task, specific_owner=owner_name)
                     
                     if debug:
-                        print(f"  ✅ Would send to {email}")
-                        print(f"  Subject: {mail_subject}")
+                        print(f"    ✅ Would send to {owner_name} <{email}>")
+                        print(f"    Subject: {subject_line}")
                         success = True  # Pretend success in debug mode
-                        error_msg = None
-                else:
-                    success, error_msg = send_email(email, mail_subject, html)
                     else:
+                        # Check SMTP configuration before sending
+                        config = get_env_config()
+                        if not config['smtp_username'] or not config['smtp_password']:
+                            print(f"    ❌ SMTP not configured. Cannot send to {email}")
+                            reasons['smtp_not_configured'] = reasons.get('smtp_not_configured', 0) + 1
+                            continue
+                            
                         success = send_email(email, subject_line, html)
                     
                     if success:
@@ -574,8 +545,12 @@ def send_reminders(force_first=False, debug=False):
         
         # Save updates if any emails were sent
         if sent_total > 0 and not debug:
-            df.to_excel(REGISTRY_FILE, index=False)
-            print(f"\n💾 Updated {len(df[df['Last Reminder Date'] == now_str])} tasks in registry")
+            try:
+                df.to_excel(REGISTRY_FILE, index=False)
+                print(f"\n💾 Updated {len(df[df['Last Reminder Date'] == now_str])} tasks in registry")
+            except Exception as e:
+                print(f"❌ Failed to save registry: {e}")
+                reasons['save_error'] = reasons.get('save_error', 0) + 1
         
         # Build summary
         summary = [
@@ -595,6 +570,17 @@ def send_reminders(force_first=False, debug=False):
             summary.append(f"\n⚠️ **{reasons['no_email']} tasks had no email mapping**")
             summary.append("**Solution:** Check if owner names match between tasks and team directory")
         
+        if 'send_error' in reasons and reasons['send_error'] > 0 and not debug:
+            summary.append(f"\n🚨 **{reasons['send_error']} emails failed to send**")
+            summary.append("**Cause:** SMTP configuration issue")
+            summary.append("**Solution:** Configure SMTP in Streamlit Cloud Secrets")
+        
+        if 'smtp_not_configured' in reasons and reasons['smtp_not_configured'] > 0:
+            summary.append(f"\n🔧 **{reasons['smtp_not_configured']} emails skipped - SMTP not configured**")
+            summary.append("**To fix:** Add SMTP credentials to Streamlit Cloud Secrets")
+            summary.append("   Go to: App Settings → Secrets")
+            summary.append("   Add: SMTP_USERNAME, CEO_AGENT_EMAIL_PASSWORD")
+        
         print(f"\n{'='*60}")
         print(f"✅ Process complete - Emails Sent: {sent_total}, Tasks Skipped: {skipped}")
         print(f"{'='*60}")
@@ -604,6 +590,8 @@ def send_reminders(force_first=False, debug=False):
     except Exception as e:
         error_msg = f"❌ Error in reminder process: {str(e)}"
         print(error_msg)
+        import traceback
+        traceback.print_exc()
         return error_msg
 
 # -----------------------------
@@ -642,128 +630,6 @@ def test_multi_owner():
         else:
             print(f"  ❌ No emails found")
 
-def test_smtp_connection():
-    """Test SMTP connection and return result string."""
-    cfg = get_env_config()
-    
-    if not cfg['smtp_username'] or not cfg['smtp_password']:
-        return "❌ SMTP credentials missing in .env file"
-    
-    try:
-        server = smtplib.SMTP(cfg['smtp_server'], cfg['smtp_port'], timeout=10)
-        server.ehlo()
-        server.starttls()
-        server.ehlo()
-        server.login(cfg['smtp_username'], cfg['smtp_password'])
-        
-        # Try to send a test email to ourselves
-        test_msg = MIMEMultipart('alternative')
-        test_msg['From'] = f"{cfg['sender_name']} <{cfg['sender_email']}>"
-        test_msg['To'] = cfg['smtp_username']
-        test_msg['Subject'] = "Test email from Follow-up Agent"
-        test_msg.attach(MIMEText("<h1>Test Email</h1><p>This is a test to verify SMTP settings.</p>", 'html'))
-        
-        server.send_message(test_msg)
-        server.quit()
-        
-        return f"✅ SMTP test successful! Test email sent to {cfg['smtp_username']}"
-        
-    except smtplib.SMTPAuthenticationError as e:
-        return f"❌ SMTP Authentication failed: {e}"
-    except smtplib.SMTPException as e:
-        return f"❌ SMTP error occurred: {e}"
-    except Exception as e:
-        return f"❌ Failed to test SMTP: {e}"
-
-def fix_missing_mappings():
-    """Create a mapping file for missing owners."""
-    if not REGISTRY_FILE.exists():
-        return "❌ Registry file not found"
-    
-    if not TEAM_FILE.exists():
-        return "❌ Team directory not found"
-    
-    try:
-        # Load data
-        tasks_df = pd.read_excel(REGISTRY_FILE)
-        team_df = pd.read_excel(TEAM_FILE)
-        
-        # Get unique active task owners
-        active_statuses = ['OPEN', 'PENDING', 'IN PROGRESS']
-        active_tasks = tasks_df[tasks_df['Status'].isin(active_statuses)]
-        unique_owners = active_tasks['Owner'].dropna().unique()
-        
-        # Create mapping dictionary from team directory
-        team_map = {}
-        for _, row in team_df.iterrows():
-            full_name = str(row.get('full_name', '')).strip()
-            email = str(row.get('email', '')).strip().lower()
-            
-            if full_name and email:
-                # Map by first name
-                first_name = full_name.split()[0].lower()
-                team_map[first_name] = email
-                
-                # Map by full name
-                team_map[full_name.lower()] = email
-        
-        # Find missing mappings
-        missing = []
-        for owner in unique_owners:
-            if not isinstance(owner, str):
-                continue
-                
-            owner_clean = owner.strip().lower()
-            if not owner_clean or owner_clean == 'unassigned':
-                continue
-            
-            # Split multi-owners
-            import re
-            parts = re.split(r'[,;&]', owner_clean)
-            
-            for part in parts:
-                part_clean = part.strip()
-                if not part_clean:
-                    continue
-                
-                # Check if owner exists in team_map
-                found = False
-                for key in team_map.keys():
-                    if part_clean in key or key in part_clean:
-                        found = True
-                        break
-                
-                if not found and part_clean not in missing:
-                    missing.append(part_clean)
-        
-        # Create fix file
-        if missing:
-            fix_data = []
-            for owner in missing:
-                # Try to guess email
-                first_part = owner.split()[0].lower() if ' ' in owner else owner.lower()
-                suggested_email = f"{first_part}@koenig-solutions.com"
-                
-                fix_data.append({
-                    'task_owner': owner,
-                    'suggested_full_name': owner.title(),
-                    'suggested_email': suggested_email,
-                    'actual_full_name': '',
-                    'actual_email': '',
-                    'notes': 'Add to Team_Directory.xlsx'
-                })
-            
-            fix_df = pd.DataFrame(fix_data)
-            fix_path = DATA_DIR / 'missing_mappings.xlsx'
-            fix_df.to_excel(fix_path, index=False)
-            
-            return f"✅ Created fix file with {len(missing)} missing mappings: {fix_path}"
-        else:
-            return "✅ All owners have email mappings!"
-        
-    except Exception as e:
-        return f"❌ Error: {e}"
-
 # -----------------------------
 # RUN IF EXECUTED DIRECTLY
 # -----------------------------
@@ -792,10 +658,3 @@ if __name__ == "__main__":
         if choice == "1":
             test_multi_owner()
         elif choice == "2":
-            result = send_reminders(debug=True)
-            print(result)
-        elif choice == "3":
-            result = send_reminders()
-            print(result)
-        else:
-            print("Invalid choice")
