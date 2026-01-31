@@ -814,23 +814,6 @@ def show_send_reminders():
     st.header("📧 Send Task Reminders")
     st.markdown("Send email reminders to task owners for pending tasks.")
     st.markdown("---")
-
-    # Check SMTP configuration first
-    try:
-        from run_reminders import get_env_config
-        config = get_env_config()
-        if not config.get('smtp_username') or not config.get('smtp_password'):
-            st.error("❌ SMTP credentials are not set. Please set them in Streamlit Secrets or .env file.")
-            st.info("Go to '🔧 SMTP Diagnostics' page for setup instructions.")
-            return
-    except ValueError as e:
-        st.error(f"❌ Missing SMTP configuration: {e}")
-        st.info("Go to '🔧 SMTP Diagnostics' page for setup instructions.")
-        return
-    except Exception as e:
-        st.error(f"❌ Failed to load SMTP configuration: {e}")
-        st.info("Go to '🔧 SMTP Diagnostics' page for setup instructions.")
-        return
     
     # SMTP Test Section
     with st.expander("🔧 SMTP Configuration Test", expanded=True):
