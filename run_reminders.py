@@ -309,31 +309,29 @@ def send_email(to_email, subject, html_body, debug=False):
         print(f"  [DEBUG] Subject: {subject}")
         return True, None
     
-    cfg = get_env_config()
-    
-    # Validate config
-    if not cfg['smtp_username'] or not cfg['smtp_password']:
-        error_msg = "❌ SMTP credentials missing in .env file"
+    try:
+        cfg = _smtp_config()
+    except Exception as e:
+        error_msg = f"❌ Failed to get SMTP config: {e}"
         print(error_msg)
         return False, error_msg
     
     try:
         msg = MIMEMultipart('alternative')
-        msg['From'] = f"{cfg['sender_name']} <{cfg['sender_email']}>"
+        msg['From'] = f'{cfg["sender_name"]} <{cfg["sender_email"]}>'
         msg['To'] = to_email
         msg['Subject'] = subject
+
         msg.attach(MIMEText(html_body, 'html'))
-        
-        with smtplib.SMTP(cfg['smtp_server'], cfg['smtp_port']) as server:
+
+        with smtplib.SMTP(cfg["smtp_server"], cfg["smtp_port"]) as server:
             server.ehlo()
             server.starttls()
-            server.ehlo()
-            server.login(cfg['smtp_username'], cfg['smtp_password'])
-            server.send_message(msg)
+            server.login(cfg["smtp_username"], cfg["smtp_password"])
+            server.sendmail(cfg["sender_email"], [to_email], msg.as_string())
         
-        print(f"✅ Email sent to {to_email}")
+        print(f"✅ Email sent successfully to {to_email}")
         return True, None
-        
     except smtplib.SMTPAuthenticationError as e:
         error_msg = f"❌ SMTP Authentication failed: {e}"
         print(error_msg)
