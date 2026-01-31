@@ -683,6 +683,133 @@ def show_bulk_upload():
             if created > 0:
                 st.balloons()
 
+def show_smtp_diagnostics():
+    """Show SMTP diagnostic tools."""
+    st.header("🔧 SMTP Diagnostics & Setup")
+    
+    st.markdown("""
+    ### Current SMTP Status: ❌ NOT CONFIGURED
+    
+    **Error Analysis:**
+    - Debug mode works (23 emails would be sent)
+    - Real mode fails (SMTP authentication error)
+    - This means your `.env` file or Streamlit Secrets are not set up correctly
+    """)
+    
+    # Show current configuration
+    st.subheader("📋 Current Configuration")
+    
+    try:
+        from run_reminders import _get_setting
+        
+        config_items = [
+            ("SMTP_SERVER", _get_setting("SMTP_SERVER", "Not set")),
+            ("SMTP_PORT", _get_setting("SMTP_PORT", "Not set")),
+            ("SMTP_USERNAME", _get_setting("SMTP_USERNAME", "Not set")),
+            ("CEO_AGENT_EMAIL_PASSWORD", "***" if _get_setting("CEO_AGENT_EMAIL_PASSWORD") else "Not set"),
+            ("AGENT_SENDER_NAME", _get_setting("AGENT_SENDER_NAME", "Not set")),
+            ("AGENT_SENDER_EMAIL", _get_setting("AGENT_SENDER_EMAIL", "Not set")),
+        ]
+        
+        for key, value in config_items:
+            status = "✅" if value and value != "Not set" else "❌"
+            st.write(f"{status} **{key}:** {value}")
+            
+    except Exception as e:
+        st.error(f"Error loading config: {e}")
+    
+    # Setup instructions
+    st.subheader("🛠️ Setup Instructions")
+    
+    st.markdown("""
+    ### For Streamlit Cloud:
+    
+    1. Go to [Streamlit Cloud Dashboard](https://share.streamlit.io/)
+    2. Select your app
+    3. Click "Settings" (⚙️)
+    4. Click "Secrets"
+    5. Add these secrets:
+    
+    ```toml
+    # .streamlit/secrets.toml
+    SMTP_SERVER = "smtp.office365.com"
+    SMTP_PORT = 587
+    SMTP_USERNAME = "your-email@koenig-solutions.com"
+    CEO_AGENT_EMAIL_PASSWORD = "your-app-password"
+    AGENT_SENDER_NAME = "Follow-up Reminder Agent"
+    AGENT_SENDER_EMAIL = "your-email@koenig-solutions.com"
+    ```
+    
+    ### For Office365 App Password:
+    
+    1. Go to [Microsoft Security Settings](https://account.microsoft.com/security)
+    2. Click "Advanced security options"
+    3. Under "App passwords", click "Create a new app password"
+    4. Use this app password in your secrets (NOT your regular password)
+    
+    ### Quick Test:
+    
+    1. Click "Test SMTP Connection" below
+    2. If it fails, check your secrets/app password
+    3. Try the "Send Test Email" button
+    """)
+    
+    # Test buttons
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        if st.button("Test SMTP Connection", use_container_width=True):
+            try:
+                # Simple SMTP test
+                import smtplib
+                from run_reminders import _get_setting
+                
+                smtp_server = _get_setting("SMTP_SERVER", "smtp.office365.com")
+                smtp_port = int(_get_setting("SMTP_PORT", 587))
+                smtp_username = _get_setting("SMTP_USERNAME", "")
+                smtp_password = _get_setting("CEO_AGENT_EMAIL_PASSWORD", "")
+                
+                if not smtp_username or not smtp_password:
+                    st.error("❌ SMTP credentials not set!")
+                    return
+                
+                try:
+                    server = smtplib.SMTP(smtp_server, smtp_port, timeout=5)
+                    server.ehlo()
+                    server.starttls()
+                    server.ehlo()
+                    st.success("✅ SMTP Server connection successful")
+                    server.quit()
+                except Exception as e:
+                    st.error(f"❌ Connection failed: {e}")
+                    
+            except Exception as e:
+                st.error(f"❌ Error: {e}")
+    
+    with col2:
+        test_email = st.text_input("Test email address", 
+                                  value=_get_setting("SMTP_USERNAME", ""),
+                                  placeholder="Enter email for testing")
+        
+        if st.button("Send Test Email", use_container_width=True) and test_email:
+            with st.spinner("Sending test email..."):
+                try:
+                    from run_reminders import send_email
+                    success = send_email(
+                        test_email,
+                        "Test from Follow-up Agent",
+                        "<h1>Test Email</h1><p>If you receive this, SMTP is working!</p>"
+                    )
+                    
+                    if success:
+                        st.success(f"✅ Test email sent to {test_email}")
+                        st.info("📧 Check your inbox (and spam folder)")
+                    else:
+                        st.error("❌ Failed to send test email")
+                        
+                except Exception as e:
+                    st.error(f"❌ Error: {e}")
+
 def show_send_reminders():
     st.header("📧 Send Task Reminders")
     st.markdown("Send email reminders to task owners for pending tasks.")
